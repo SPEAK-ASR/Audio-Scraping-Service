@@ -1,0 +1,27 @@
+# Core dependencies
+yt-dlp
+webrtcvad
+setuptools
+
+# FastAPI and web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Database
+sqlalchemy[asyncio]==2.0.23
+asyncpg==0.29.0
+
+# Google Cloud services
+google-cloud-speech==2.21.0
+google-cloud-storage==2.10.0
+
+# Audio processing
+pydub==0.25.1
+
+# Configuration and environment
+pydantic-settings==2.0.3
+python-dotenv==1.0.0
+
+# Utilities
+tqdm==4.66.1

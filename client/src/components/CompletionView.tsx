@@ -32,11 +32,6 @@ export function CompletionView({
           </p>
         </div>
 
-        <div className="bg-muted rounded-lg p-4 mb-4 text-left">
-          <p className="text-sm font-medium text-foreground">{videoTitle}</p>
-          <p className="text-xs text-muted-foreground">{videoAuthor}</p>
-        </div>
-
         <div className="bg-secondary rounded-lg p-6 mb-2">
 
           {/* Statistics Cards */}

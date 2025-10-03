@@ -18,10 +18,12 @@ function App() {
   const [clips, setClips] = useState<ClipData[]>([]);
   const [transcriptions, setTranscriptions] = useState<TranscribedClip[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingError, setProcessingError] = useState<string | null>(null);
 
   const handleYoutubeSubmit = () => {
     setCurrentStep('processing');
     setIsProcessing(true);
+    setProcessingError(null);
   };
 
   const handleClipsGenerated = (videoId: string, metadata: VideoMetadata, clipsData: ClipData[]) => {
@@ -30,6 +32,7 @@ function App() {
     setClips(clipsData);
     setCurrentStep('clips');
     setIsProcessing(false);
+    setProcessingError(null);
   };
 
   const handleTranscriptionComplete = (transcribedClips: TranscribedClip[]) => {
@@ -48,6 +51,13 @@ function App() {
     setClips([]);
     setTranscriptions([]);
     setIsProcessing(false);
+    setProcessingError(null);
+  };
+
+  const handleProcessingError = (errorMessage: string) => {
+    setCurrentStep('input');
+    setIsProcessing(false);
+    setProcessingError(errorMessage);
   };
 
   return (
@@ -87,6 +97,8 @@ function App() {
             <YoutubeUrlInput 
               onSubmit={handleYoutubeSubmit}
               onClipsGenerated={handleClipsGenerated}
+              onError={handleProcessingError}
+              initialError={processingError}
             />
           )}
 

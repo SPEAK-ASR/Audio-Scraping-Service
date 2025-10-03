@@ -70,21 +70,41 @@ async def get_async_database_session() -> AsyncGenerator[AsyncSession, None]:
     Handles connection failures gracefully during session cleanup to prevent
     cascading errors when database connections are lost.
     """
-    session = AsyncSessionLocal()
+    session = None
     try:
+        session = AsyncSessionLocal()
+        # Test the connection before yielding
+        await session.execute(text("SELECT 1"))
         yield session
     except Exception as e:
-        logger.error(f"Async database session error: {e}")
-        try:
-            await session.rollback()
-        except (DBAPIError, DisconnectionError) as rollback_error:
-            # Connection was lost during rollback - this is expected in some scenarios
-            logger.warning(f"Failed to rollback transaction due to connection loss: {rollback_error}")
-        except Exception as rollback_error:
-            logger.error(f"Unexpected error during session rollback: {rollback_error}")
-        raise
+        # Don't log HTTPExceptions as database errors - they're application logic
+        from fastapi import HTTPException
+        if isinstance(e, HTTPException):
+            # HTTPException should propagate normally, just clean up the session
+            if session:
+                try:
+                    await session.rollback()
+                except (DBAPIError, DisconnectionError):
+                    # Connection issues during rollback are expected and OK
+                    pass
+                except Exception as rollback_error:
+                    logger.warning(f"Error during session rollback for HTTPException: {rollback_error}")
+            raise
+        else:
+            # This is a real database/connection error
+            logger.error(f"Async database session error: {e}", exc_info=True)
+            if session:
+                try:
+                    await session.rollback()
+                except (DBAPIError, DisconnectionError) as rollback_error:
+                    # Connection was lost during rollback - this is expected in some scenarios
+                    logger.warning(f"Failed to rollback transaction due to connection loss: {rollback_error}")
+                except Exception as rollback_error:
+                    logger.error(f"Unexpected error during session rollback: {rollback_error}")
+            raise
     finally:
-        await _safe_session_close(session)
+        if session:
+            await _safe_session_close(session)
 
 
 async def _safe_session_close(session: AsyncSession) -> None:

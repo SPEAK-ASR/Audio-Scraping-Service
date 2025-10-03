@@ -94,12 +94,27 @@ async def split_youtube_audio(
         video_id = get_youtube_processor().extract_video_id(str(request.youtube_url))
         
         # Check if video already exists in database
-        existing_video = await DatabaseService.check_video_exists(db, video_id)
-        if existing_video:
+        try:
+            existing_video = await DatabaseService.check_video_exists(db, video_id)
+            if existing_video:
+                logger.info(f"Video {video_id} already exists in database with title: {existing_video.title}")
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "VIDEO_ALREADY_EXISTS",
+                        "message": f"Video with ID '{video_id}' has already been processed and exists in the database.",
+                        "video_title": existing_video.title,
+                        "video_id": video_id,
+                        "suggestion": "Use the existing video data or delete it first if you want to reprocess."
+                    }
+                )
+        except HTTPException:
+            raise
+        except Exception as db_error:
+            logger.error(f"Database error while checking video existence: {db_error}", exc_info=True)
             raise HTTPException(
-                status_code=409,
-                detail=f"Video with ID '{video_id}' has already been processed and exists in the database. "
-                       f"Title: '{existing_video.title}'"
+                status_code=500,
+                detail=f"Database connection error: {str(db_error)}. Please check if the database is running and accessible."
             )
         
         # Download and split audio

@@ -58,3 +58,37 @@ async def system_status():
         "cloud_storage_configured": bool(settings.GCS_BUCKET_NAME),
         "api_version": settings.API_V1_STR
     }
+
+
+@router.post("/init-db")
+async def initialize_database():
+    """
+    Initialize database tables (development only).
+    
+    This endpoint creates database tables if they don't exist.
+    Only available in debug mode for development purposes.
+    """
+    if not settings.DEBUG:
+        raise HTTPException(
+            status_code=403,
+            detail="Database initialization is only available in debug mode"
+        )
+    
+    try:
+        from app.core.database import async_engine, Base
+        
+        # Create all tables
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        
+        return {
+            "success": True,
+            "message": "Database tables initialized successfully",
+            "debug_mode": settings.DEBUG
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to initialize database: {str(e)}"
+        )

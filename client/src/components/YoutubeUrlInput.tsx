@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   CardContent,
   TextField,
@@ -20,12 +20,19 @@ import { audioApi, type ClipData, type VideoMetadata } from '../lib/api';
 interface YoutubeUrlInputProps {
   onSubmit: () => void;
   onClipsGenerated: (videoId: string, metadata: VideoMetadata, clips: ClipData[]) => void;
+  onError: (errorMessage: string) => void;
+  initialError?: string | null;
 }
 
-export function YoutubeUrlInput({ onSubmit, onClipsGenerated }: YoutubeUrlInputProps) {
+export function YoutubeUrlInput({ onSubmit, onClipsGenerated, onError, initialError }: YoutubeUrlInputProps) {
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError || null);
+
+  // Update error when initialError changes
+  useEffect(() => {
+    setError(initialError || null);
+  }, [initialError]);
   
   // Advanced parameters with default values
   const [vadAggressiveness, setVadAggressiveness] = useState(2);
@@ -49,8 +56,48 @@ export function YoutubeUrlInput({ onSubmit, onClipsGenerated }: YoutubeUrlInputP
         setIsLoading(false);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      let errorMessage = 'An error occurred';
+      
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosError = err as any;
+        if (axiosError.response?.status === 409) {
+          // Handle video already exists error
+          const errorData = axiosError.response?.data;
+          if (errorData && typeof errorData === 'object' && errorData.detail) {
+            if (typeof errorData.detail === 'object' && errorData.detail.error === 'VIDEO_ALREADY_EXISTS') {
+              errorMessage = `Video "${errorData.detail.video_title}" has already been processed. ${errorData.detail.suggestion}`;
+            } else if (typeof errorData.detail === 'string') {
+              errorMessage = errorData.detail;
+            }
+          } else {
+            errorMessage = 'This video has already been processed';
+          }
+        } else if (axiosError.response?.status === 500) {
+          // Handle database connection errors
+          const errorData = axiosError.response?.data;
+          if (errorData && typeof errorData === 'object' && errorData.detail) {
+            if (typeof errorData.detail === 'string' && errorData.detail.includes('Database connection error')) {
+              errorMessage = 'Database connection error. Please check if the database server is running and try again.';
+            } else {
+              errorMessage = 'Server error occurred. Please try again later.';
+            }
+          } else {
+            errorMessage = 'Server error occurred. Please try again later.';
+          }
+        } else if (axiosError.response?.data?.detail) {
+          errorMessage = typeof axiosError.response.data.detail === 'string' 
+            ? axiosError.response.data.detail 
+            : 'Processing failed';
+        } else if (axiosError.message) {
+          errorMessage = axiosError.message;
+        }
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
       setIsLoading(false);
+      onError(errorMessage); // Reset to input step in parent component
     }
   };
 
@@ -90,7 +137,10 @@ export function YoutubeUrlInput({ onSubmit, onClipsGenerated }: YoutubeUrlInputP
             label="YouTube Video URL"
             placeholder="https://www.youtube.com/watch?v=..."
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              if (error) setError(null); // Clear error when user starts typing
+            }}
             disabled={isLoading}
             error={Boolean(url && !isValidYoutubeUrl(url))}
             helperText={url && !isValidYoutubeUrl(url) ? "Please enter a valid YouTube URL" : undefined}
@@ -181,7 +231,15 @@ export function YoutubeUrlInput({ onSubmit, onClipsGenerated }: YoutubeUrlInputP
           </Box>
 
           {error && (
-            <Alert severity="error" sx={{ fontSize: '0.875rem' }}>
+            <Alert 
+              severity={error.includes('already been processed') ? 'warning' : 'error'} 
+              sx={{ 
+                fontSize: '0.875rem',
+                '& .MuiAlert-message': {
+                  fontSize: '0.875rem'
+                }
+              }}
+            >
               {error}
             </Alert>
           )}

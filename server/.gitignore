@@ -131,6 +131,7 @@ dmypy.json
 # Project-specific files
 # Output directory for audio clips
 output/*
+!output/.gitkeep
 *.wav
 *.mp3
 *.m4a

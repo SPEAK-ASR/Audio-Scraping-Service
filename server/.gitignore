@@ -130,7 +130,7 @@ dmypy.json
 
 # Project-specific files
 # Output directory for audio clips
-output/
+output/*
 *.wav
 *.mp3
 *.m4a

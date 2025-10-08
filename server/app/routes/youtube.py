@@ -787,6 +787,126 @@ async def list_video_clips(video_id: str):
         raise HTTPException(status_code=500, detail=f"Error listing clips: {str(e)}")
 
 
+@router.post("/clean-transcriptions/{video_id}")
+async def clean_null_transcriptions(video_id: str):
+    """
+    Delete audio files with null transcriptions and update metadata files.
+    
+    This endpoint:
+    1. Identifies audio files with null/empty transcriptions
+    2. Deletes those audio files from disk
+    3. Removes entries from transcriptions.json
+    4. Removes entries from clip_metadata.json
+    
+    Args:
+        video_id: The video ID to clean
+        
+    Returns:
+        Cleanup status with list of deleted files
+    """
+    try:
+        logger.info(f"Starting cleanup of null transcriptions for video {video_id}")
+        
+        # Find clips directory
+        base_dir = Path.cwd()
+        clips_dir = base_dir / "output" / video_id
+        
+        if not clips_dir.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Clips directory not found for video {video_id}"
+            )
+        
+        # Load transcriptions.json
+        transcription_file = clips_dir / "transcriptions.json"
+        if not transcription_file.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Transcriptions file not found for video {video_id}"
+            )
+        
+        import json
+        
+        # Read transcriptions
+        with open(transcription_file, 'r', encoding='utf-8') as f:
+            transcriptions = json.load(f)
+        
+        # Identify clips with null transcriptions
+        null_clips = [clip_name for clip_name, transcription in transcriptions.items() 
+                     if transcription is None or (isinstance(transcription, str) and transcription.strip() == '')]
+        
+        if not null_clips:
+            return {
+                "success": True,
+                "message": "No null transcriptions found",
+                "video_id": video_id,
+                "deleted_files": [],
+                "total_deleted": 0
+            }
+        
+        logger.info(f"Found {len(null_clips)} clips with null transcriptions: {null_clips}")
+        
+        # Delete audio files with null transcriptions
+        deleted_files = []
+        for clip_name in null_clips:
+            clip_path = clips_dir / clip_name
+            if clip_path.exists():
+                try:
+                    clip_path.unlink()  # Delete the file
+                    deleted_files.append(clip_name)
+                    logger.info(f"Deleted audio file: {clip_name}")
+                except Exception as e:
+                    logger.error(f"Failed to delete {clip_name}: {e}")
+        
+        # Update transcriptions.json - remove null entries
+        updated_transcriptions = {k: v for k, v in transcriptions.items() 
+                                 if k not in null_clips}
+        
+        with open(transcription_file, 'w', encoding='utf-8') as f:
+            json.dump(updated_transcriptions, f, indent=2, ensure_ascii=False)
+        
+        logger.info(f"Updated transcriptions.json - removed {len(null_clips)} entries")
+        
+        # Update clip_metadata.json - remove entries for deleted clips
+        clip_metadata_file = clips_dir / "clip_metadata.json"
+        if clip_metadata_file.exists():
+            try:
+                with open(clip_metadata_file, 'r', encoding='utf-8') as f:
+                    clip_metadata = json.load(f)
+                
+                # Remove entries for deleted clips
+                updated_clip_metadata = {k: v for k, v in clip_metadata.items() 
+                                        if k not in null_clips}
+                
+                with open(clip_metadata_file, 'w', encoding='utf-8') as f:
+                    json.dump(updated_clip_metadata, f, indent=2, ensure_ascii=False)
+                
+                logger.info(f"Updated clip_metadata.json - removed {len(null_clips)} entries")
+            except Exception as e:
+                logger.warning(f"Failed to update clip_metadata.json: {e}")
+        
+        logger.info(f"Successfully cleaned {len(deleted_files)} files with null transcriptions")
+        
+        return {
+            "success": True,
+            "message": f"Successfully deleted {len(deleted_files)} clips with null transcriptions",
+            "video_id": video_id,
+            "deleted_files": deleted_files,
+            "total_deleted": len(deleted_files),
+            "remaining_clips": len(updated_transcriptions)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cleanup failed", extra={
+            "video_id": video_id,
+            "error": str(e),
+            "error_type": type(e).__name__
+        }, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
+
+
 @router.delete("/delete-audio/{video_id}")
 async def delete_audio_files(video_id: str):
     """

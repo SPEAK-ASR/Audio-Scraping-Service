@@ -109,6 +109,11 @@ export const audioApi = {
     return response.data;
   },
 
+  cleanNullTranscriptions: async (videoId: string): Promise<{ success: boolean; message: string; deleted_files: string[]; total_deleted: number; remaining_clips: number }> => {
+    const response = await api.post(`/clean-transcriptions/${videoId}`);
+    return response.data;
+  },
+
   getAudioFile: (videoId: string, clipName: string): string => {
     return `${AUDIO_BASE_URL}/output/${videoId}/${clipName}`;
   },

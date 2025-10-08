@@ -1,16 +1,20 @@
 import { useState } from 'react';
-import { MessageSquare, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
+import { MessageSquare, ChevronDown, ChevronUp, Copy, Check, Trash2 } from 'lucide-react';
 import type { TranscribedClip, VideoMetadata } from '../lib/api';
+import { audioApi } from '../lib/api';
 import { cn } from '../lib/utils';
 
 interface TranscriptionViewProps {
   transcriptions: TranscribedClip[];
   videoMetadata: VideoMetadata | null;
+  videoId: string;
+  onCleanupComplete?: (deletedFiles: string[]) => void;
 }
 
-export function TranscriptionView({ transcriptions, videoMetadata }: TranscriptionViewProps) {
+export function TranscriptionView({ transcriptions, videoMetadata, videoId, onCleanupComplete }: TranscriptionViewProps) {
   const [expandedClips, setExpandedClips] = useState<Set<string>>(new Set());
   const [copiedClips, setCopiedClips] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const toggleExpanded = (clipName: string) => {
     const newExpanded = new Set(expandedClips);
@@ -58,11 +62,45 @@ export function TranscriptionView({ transcriptions, videoMetadata }: Transcripti
     }
   };
 
+  const handleDeleteFailedTranscriptions = async () => {
+    const nullCount = transcriptions.filter(clip => !clip.transcription || clip.transcription.trim() === '').length;
+    
+    if (nullCount === 0) {
+      alert('No failed transcriptions to delete!');
+      return;
+    }
+
+    const confirmDelete = window.confirm(
+      `This will permanently delete ${nullCount} audio file${nullCount > 1 ? 's' : ''} with no transcription and remove them from all metadata.\n\nAre you sure you want to continue?`
+    );
+
+    if (!confirmDelete) return;
+
+    setIsDeleting(true);
+    try {
+      const response = await audioApi.cleanNullTranscriptions(videoId);
+      if (response.success) {
+        alert(`Successfully deleted ${response.total_deleted} audio files with null transcriptions.\n\n${response.remaining_clips} clips remaining.`);
+        // Call the callback to update parent component state
+        if (onCleanupComplete) {
+          onCleanupComplete(response.deleted_files);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to delete null transcriptions:', error);
+      alert('Failed to delete null transcriptions. Please check the console for details.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const truncateText = (text: string | null, maxLength: number = 150) => {
     if (!text || text.trim() === '') return 'No transcription available';
     if (text.length <= maxLength) return text;
     return text.slice(0, maxLength) + '...';
   };
+
+  const nullTranscriptionCount = transcriptions.filter(clip => !clip.transcription || clip.transcription.trim() === '').length;
 
   return (
     <div className="mt-2">
@@ -74,27 +112,48 @@ export function TranscriptionView({ transcriptions, videoMetadata }: Transcripti
             <span className="bg-primary/10 text-primary px-2 py-1 rounded-full text-sm">
               {transcriptions.length} clips
             </span>
+            {nullTranscriptionCount > 0 && (
+              <span className="bg-red-100 text-red-800 px-2 py-1 rounded-full text-sm">
+                {nullTranscriptionCount} failed
+              </span>
+            )}
           </div>
           
-          <button
-            onClick={copyAllTranscriptions}
-            className={cn(
-              "flex items-center gap-2 px-3 py-2 text-sm bg-secondary hover:bg-secondary/80 rounded-md transition-colors",
-              copiedClips.has('all') && "bg-green-600 hover:bg-green-600/80"
+          <div className="flex gap-2">
+            {nullTranscriptionCount > 0 && (
+              <button
+                onClick={handleDeleteFailedTranscriptions}
+                disabled={isDeleting}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                  isDeleting && "cursor-wait"
+                )}
+                title={`Delete ${nullTranscriptionCount} audio file${nullTranscriptionCount > 1 ? 's' : ''} with no transcription`}
+              >
+                <Trash2 className="w-4 h-4" />
+                {isDeleting ? 'Deleting...' : `Delete Failed (${nullTranscriptionCount})`}
+              </button>
             )}
-          >
-            {copiedClips.has('all') ? (
-              <>
-                <Check className="w-4 h-4" />
-                Copied!
-              </>
-            ) : (
-              <>
-                <Copy className="w-4 h-4" />
-                Copy All
-              </>
-            )}
-          </button>
+            <button
+              onClick={copyAllTranscriptions}
+              className={cn(
+                "flex items-center gap-2 px-3 py-2 text-sm bg-secondary hover:bg-secondary/80 rounded-md transition-colors",
+                copiedClips.has('all') && "bg-green-600 hover:bg-green-600/80"
+              )}
+            >
+              {copiedClips.has('all') ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  Copy All
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         <div className="space-y-4 max-h-[300px] overflow-y-auto">

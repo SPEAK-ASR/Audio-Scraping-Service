@@ -40,6 +40,12 @@ function App() {
     setCurrentStep('transcription');
   };
 
+  const handleCleanupComplete = (deletedFiles: string[]) => {
+    // Remove deleted clips from both transcriptions and clips state
+    setTranscriptions(prev => prev.filter(t => !deletedFiles.includes(t.clip_name)));
+    setClips(prev => prev.filter(c => !deletedFiles.includes(c.clip_name)));
+  };
+
   const handleStorageComplete = () => {
     setCurrentStep('complete');
   };
@@ -135,6 +141,8 @@ function App() {
             <TranscriptionView
               transcriptions={transcriptions}
               videoMetadata={videoMetadata}
+              videoId={videoId}
+              onCleanupComplete={handleCleanupComplete}
             />
           )}
         </Box>

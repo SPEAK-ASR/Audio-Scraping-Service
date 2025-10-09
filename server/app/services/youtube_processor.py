@@ -20,6 +20,7 @@ from typing import Dict, List, Tuple, Any
 import yt_dlp
 import webrtcvad
 from app.utils import get_logger
+from app.core.config import settings
 
 logger = get_logger(__name__)
 
@@ -274,9 +275,9 @@ class YouTubeProcessor:
             duration = end - start
             logger.info(f"Processing segment {clip_counter}: {start:.2f}s - {end:.2f}s (duration: {duration:.2f}s)")
             
-            # More flexible duration filter - allow 1-15 second clips
-            if duration < 1 or duration > 15:
-                logger.info(f"Skipping segment {clip_counter}: duration {duration:.2f}s outside 1-15s range")
+            # Filter based on configured duration constraints
+            if duration < settings.MIN_CLIP_DURATION or duration > settings.MAX_CLIP_DURATION:
+                logger.info(f"Skipping segment {clip_counter}: duration {duration:.2f}s outside {settings.MIN_CLIP_DURATION}s-{settings.MAX_CLIP_DURATION}s range")
                 continue
             
             clip_name = f"{video_id}-{clip_counter:03d}.wav"

@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     GCS_BUCKET_NAME: str = os.getenv("GCS_BUCKET_NAME", "")
     SERVICE_ACCOUNT_B64: Optional[str] = os.getenv("SERVICE_ACCOUNT_B64")
     
+    # Audio processing configuration
+    MIN_CLIP_DURATION: float = 4.0  # Minimum clip duration in seconds
+    MAX_CLIP_DURATION: float = 10.0  # Maximum clip duration in seconds
+    
     # CORS settings
     ALLOWED_HOSTS: List[str] = ["*"]
 

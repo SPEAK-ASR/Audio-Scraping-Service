@@ -18,6 +18,8 @@ function App() {
   const [clips, setClips] = useState<ClipData[]>([]);
   const [transcriptions, setTranscriptions] = useState<TranscribedClip[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isSavingToCloud, setIsSavingToCloud] = useState(false);
   const [processingError, setProcessingError] = useState<string | null>(null);
 
   const handleYoutubeSubmit = () => {
@@ -37,7 +39,17 @@ function App() {
 
   const handleTranscriptionComplete = (transcribedClips: TranscribedClip[]) => {
     setTranscriptions(transcribedClips);
+    setIsTranscribing(false);
+    if (transcribedClips.length === 0) {
+      // If no transcriptions, stay on clips stage
+      setCurrentStep('clips');
+    }
+  };
+
+  const handleTranscriptionStart = () => {
     setCurrentStep('transcription');
+    setIsTranscribing(true);
+    setTranscriptions([]);
   };
 
   const handleCleanupComplete = (deletedFiles: string[]) => {
@@ -46,7 +58,13 @@ function App() {
     setClips(prev => prev.filter(c => !deletedFiles.includes(c.clip_name)));
   };
 
+  const handleStorageStart = () => {
+    setCurrentStep('storage');
+    setIsSavingToCloud(true);
+  };
+
   const handleStorageComplete = () => {
+    setIsSavingToCloud(false);
     setCurrentStep('complete');
   };
 
@@ -57,6 +75,8 @@ function App() {
     setClips([]);
     setTranscriptions([]);
     setIsProcessing(false);
+    setIsTranscribing(false);
+    setIsSavingToCloud(false);
     setProcessingError(null);
   };
 
@@ -121,9 +141,12 @@ function App() {
               clips={clips}
               videoMetadata={videoMetadata}
               onTranscriptionComplete={handleTranscriptionComplete}
+              onTranscriptionStart={handleTranscriptionStart}
+              onStorageStart={handleStorageStart}
               onStorageComplete={handleStorageComplete}
               onRevert={handleReset}
               currentStep={currentStep}
+              isTranscribing={isTranscribing}
             />
           )}
 
@@ -137,12 +160,27 @@ function App() {
             />
           )}
 
-          {currentStep === 'transcription' && transcriptions.length > 0 && (
+          {currentStep === 'transcription' && isTranscribing && (
+            <LoadingState
+              title="Transcribing audio clips..."
+              description="This may take a few minutes depending on the number of clips"
+            />
+          )}
+
+          {currentStep === 'transcription' && !isTranscribing && transcriptions.length > 0 && (
             <TranscriptionView
               transcriptions={transcriptions}
               videoMetadata={videoMetadata}
               videoId={videoId}
               onCleanupComplete={handleCleanupComplete}
+              onRevert={handleReset}
+            />
+          )}
+
+          {currentStep === 'storage' && isSavingToCloud && (
+            <LoadingState
+              title="Saving to cloud storage..."
+              description="Uploading audio clips and updating database"
             />
           )}
         </Box>

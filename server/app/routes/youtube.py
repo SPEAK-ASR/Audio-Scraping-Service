@@ -6,6 +6,7 @@ including downloading, splitting, transcription, and cloud storage operations.
 """
 
 import uuid
+import shutil
 from typing import List, Optional
 from pathlib import Path
 
@@ -475,6 +476,25 @@ async def save_clips_to_cloud_and_database(
                 logger.error(f"Processing failed for {clip_file.name}: {e}")
                 failed_clips.append(clip_file.name)
         
+        # Move folder to completed directory after successful processing
+        try:
+            completed_dir = base_dir / "output" / "completed"
+            completed_dir.mkdir(parents=True, exist_ok=True)
+            
+            destination_dir = completed_dir / request.video_id
+            
+            # If destination exists, remove it first
+            if destination_dir.exists():
+                shutil.rmtree(destination_dir)
+                logger.info(f"Removed existing completed folder: {destination_dir}")
+            
+            # Move the folder
+            shutil.move(str(clips_dir), str(destination_dir))
+            logger.info(f"Moved folder from {clips_dir} to {destination_dir}")
+        except Exception as e:
+            logger.error(f"Failed to move folder to completed directory: {e}")
+            # Don't fail the entire operation if move fails
+        
         return CloudStorageResponse(
             success=True,
             message=f"Successfully processed {len(processed_clips)} clips",
@@ -910,64 +930,52 @@ async def clean_null_transcriptions(video_id: str):
 @router.delete("/delete-audio/{video_id}")
 async def delete_audio_files(video_id: str):
     """
-    Delete all audio files for a specific video ID.
+    Delete the entire folder for a specific video ID including all audio files and metadata.
     
     Args:
-        video_id: The video ID to delete files for
+        video_id: The video ID to delete folder for
         
     Returns:
         Deletion status
     """
     try:
-        logger.info(f"Starting audio file deletion for video {video_id}")
+        logger.info(f"Starting folder deletion for video {video_id}")
         
         # Find clips directory
         base_dir = Path.cwd()
-        clips_dir = base_dir / "output" / video_id
+        video_folder = base_dir / "output" / video_id
         
-        if not clips_dir.exists():
+        if not video_folder.exists():
             raise HTTPException(
                 status_code=404,
-                detail=f"No audio files found for video {video_id}"
+                detail=f"No folder found for video {video_id}"
             )
         
-        # Count files before deletion
-        audio_files = list(clips_dir.glob("*.wav"))
-        file_count = len(audio_files)
+        # Count all files before deletion
+        all_files = list(video_folder.glob("*"))
+        file_count = len(all_files)
+        deleted_file_names = [f.name for f in all_files if f.is_file()]
         
-        # Delete all audio files
-        deleted_files = []
-        for audio_file in audio_files:
-            try:
-                audio_file.unlink()  # Delete the file
-                deleted_files.append(audio_file.name)
-            except Exception as e:
-                logger.error(f"Failed to delete {audio_file.name}: {e}")
+        # Delete the entire folder with all its contents
+        shutil.rmtree(video_folder)
+        logger.info(f"Removed directory and all contents: {video_folder}")
         
-        # Remove the directory if it's empty
-        try:
-            if clips_dir.exists() and not any(clips_dir.iterdir()):
-                clips_dir.rmdir()
-                logger.info(f"Removed empty directory: {clips_dir}")
-        except Exception as e:
-            logger.warning(f"Could not remove directory {clips_dir}: {e}")
-        
-        logger.info(f"Successfully deleted {len(deleted_files)} audio files for video {video_id}")
+        logger.info(f"Successfully deleted {file_count} files and removed folder for video {video_id}")
         
         return {
             "success": True,
-            "message": f"Successfully deleted {len(deleted_files)} audio files",
+            "message": f"Successfully deleted folder with {file_count} files",
             "video_id": video_id,
-            "deleted_files": deleted_files,
-            "total_deleted": len(deleted_files)
+            "deleted_files": deleted_file_names,
+            "total_deleted": file_count
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Audio file deletion failed", extra={
+        logger.error(f"Folder deletion failed", extra={
             "video_id": video_id,
             "error": str(e),
             "error_type": type(e).__name__
         }, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Audio file deletion failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Folder deletion failed: {str(e)}")

@@ -28,9 +28,12 @@ interface AudioClipsDisplayProps {
   clips: ClipData[];
   videoMetadata: VideoMetadata | null;
   onTranscriptionComplete: (transcriptions: TranscribedClip[]) => void;
+  onTranscriptionStart: () => void;
+  onStorageStart: () => void;
   onStorageComplete: () => void;
   onRevert: () => void;
   currentStep: ProcessingStep;
+  isTranscribing: boolean;
 }
 
 interface AudioPlayerState {
@@ -45,9 +48,12 @@ export function AudioClipsDisplay({
   clips, 
   videoMetadata,
   onTranscriptionComplete,
+  onTranscriptionStart,
+  onStorageStart,
   onStorageComplete,
   onRevert,
-  currentStep
+  currentStep,
+  isTranscribing
 }: AudioClipsDisplayProps) {
   const [selectedClip, setSelectedClip] = useState<ClipData | null>(null);
   const [currentlyPlaying, setCurrentlyPlaying] = useState<string | null>(null);
@@ -57,8 +63,6 @@ export function AudioClipsDisplay({
     duration: 0,
     volume: 1
   });
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [isSavingToCloud, setIsSavingToCloud] = useState(false);
   const [isReverting, setIsReverting] = useState(false);
   const [, setTranscriptions] = useState<TranscribedClip[]>([]);
   const [, setProcessedClips] = useState<ProcessedClip[]>([]);
@@ -140,7 +144,9 @@ export function AudioClipsDisplay({
   };
 
   const handleTranscribe = async () => {
-    setIsTranscribing(true);
+    // Immediately move to transcription stage with loading state
+    onTranscriptionStart();
+    
     try {
       const response = await audioApi.transcribeClips(videoId);
       if (response.success) {
@@ -149,13 +155,15 @@ export function AudioClipsDisplay({
       }
     } catch (error) {
       console.error('Transcription failed:', error);
-    } finally {
-      setIsTranscribing(false);
+      // On error, reset transcribing state
+      onTranscriptionComplete([]);
     }
   };
 
   const handleSaveToCloud = async () => {
-    setIsSavingToCloud(true);
+    // Immediately move to storage stage with loading state
+    onStorageStart();
+    
     try {
       const response = await audioApi.saveToCloud(videoId);
       if (response.success) {
@@ -164,8 +172,8 @@ export function AudioClipsDisplay({
       }
     } catch (error) {
       console.error('Cloud storage failed:', error);
-    } finally {
-      setIsSavingToCloud(false);
+      // On error, could handle going back or staying on transcription
+      onStorageComplete(); // This will move to complete even on error - you might want different handling
     }
   };
 
@@ -183,8 +191,8 @@ export function AudioClipsDisplay({
 
   return (
     <div>
-      {/* Audio Playlist - Only show when not in transcription or complete step */}
-      {currentStep !== 'transcription' && currentStep !== 'complete' && (
+      {/* Audio Playlist - Only show when not in transcription, storage, or complete step */}
+      {currentStep !== 'transcription' && currentStep !== 'storage' && currentStep !== 'complete' && (
         <Box sx={{ 
           maxWidth: 800, 
           mx: 'auto',
@@ -436,39 +444,27 @@ export function AudioClipsDisplay({
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
           <Button
             onClick={handleTranscribe}
-            disabled={isTranscribing}
             variant="contained"
-            startIcon={
-              isTranscribing ? (
-                <CircularProgress size={20} color="inherit" />
-              ) : (
-                <Transcribe />
-              )
-            }
+            startIcon={<Transcribe />}
           >
-            {isTranscribing ? 'Transcribing Audio...' : 'Get Transcriptions'}
+            Get Transcriptions
           </Button>
         </Box>
       )}
 
-      {currentStep === 'transcription' && (
+      {currentStep === 'transcription' && !isTranscribing && (
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
           <Button
             onClick={handleSaveToCloud}
-            disabled={isSavingToCloud}
             variant="contained"
             startIcon={
-              isSavingToCloud ? (
-                <CircularProgress size={20} color="inherit" />
-              ) : (
-                <>
-                  <CloudUpload />
-                  <Storage sx={{ ml: 0.5 }} />
-                </>
-              )
+              <>
+                <CloudUpload />
+                <Storage sx={{ ml: 0.5 }} />
+              </>
             }
           >
-            {isSavingToCloud ? 'Saving to Cloud...' : 'Save to Cloud & Database'}
+            Save to Cloud & Database
           </Button>
         </Box>
       )}

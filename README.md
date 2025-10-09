@@ -115,9 +115,24 @@ The API will be available at `http://localhost:8000`
 │   │   ├── services/     # Business logic
 │   │   └── schemas/      # Pydantic schemas
 │   ├── output/           # Generated audio clips
+│   │   └── completed/    # Completed videos (moved after processing)
 │   └── requirements.txt
 └── README.md
 ```
+
+## Audio Clip Organization
+
+The system organizes audio clips in two locations:
+
+- **`output/<video_id>/`** - Active processing folder
+  - Contains audio clips during processing
+  - Includes metadata files (`clip_metadata.json`, `video_metadata.json`)
+  - Used for transcription and cloud storage operations
+
+- **`output/completed/<video_id>/`** - Completed videos
+  - Videos are automatically moved here after successful cloud storage
+  - Preserves all files and metadata for future reference
+  - Keeps active folder clean
 
 ## API Endpoints
 

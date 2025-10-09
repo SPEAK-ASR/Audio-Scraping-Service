@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MessageSquare, ChevronDown, ChevronUp, Copy, Check, Trash2 } from 'lucide-react';
+import { MessageSquare, ChevronDown, ChevronUp, Copy, Check, Trash2, RefreshCw } from 'lucide-react';
 import type { TranscribedClip, VideoMetadata } from '../lib/api';
 import { audioApi } from '../lib/api';
 import { cn } from '../lib/utils';
@@ -9,12 +9,14 @@ interface TranscriptionViewProps {
   videoMetadata: VideoMetadata | null;
   videoId: string;
   onCleanupComplete?: (deletedFiles: string[]) => void;
+  onRevert?: () => void;
 }
 
-export function TranscriptionView({ transcriptions, videoMetadata, videoId, onCleanupComplete }: TranscriptionViewProps) {
+export function TranscriptionView({ transcriptions, videoMetadata, videoId, onCleanupComplete, onRevert }: TranscriptionViewProps) {
   const [expandedClips, setExpandedClips] = useState<Set<string>>(new Set());
   const [copiedClips, setCopiedClips] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isReverting, setIsReverting] = useState(false);
 
   const toggleExpanded = (clipName: string) => {
     const newExpanded = new Set(expandedClips);
@@ -94,6 +96,27 @@ export function TranscriptionView({ transcriptions, videoMetadata, videoId, onCl
     }
   };
 
+  const handleRevert = async () => {
+    const confirmRevert = window.confirm(
+      `This will permanently delete all audio files and metadata for this video.\n\nAre you sure you want to start over?`
+    );
+
+    if (!confirmRevert) return;
+
+    setIsReverting(true);
+    try {
+      await audioApi.deleteAudioFiles(videoId);
+      if (onRevert) {
+        onRevert();
+      }
+    } catch (error) {
+      console.error('Start over failed:', error);
+      alert('Failed to delete files. Please check the console for details.');
+    } finally {
+      setIsReverting(false);
+    }
+  };
+
   const truncateText = (text: string | null, maxLength: number = 150) => {
     if (!text || text.trim() === '') return 'No transcription available';
     if (text.length <= maxLength) return text;
@@ -120,6 +143,18 @@ export function TranscriptionView({ transcriptions, videoMetadata, videoId, onCl
           </div>
           
           <div className="flex gap-2">
+            <button
+              onClick={handleRevert}
+              disabled={isReverting}
+              className={cn(
+                "flex items-center gap-2 px-3 py-2 text-sm bg-orange-600 hover:bg-orange-700 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                isReverting && "cursor-wait"
+              )}
+              title="Delete all files and start over"
+            >
+              <RefreshCw className={cn("w-4 h-4", isReverting && "animate-spin")} />
+              {isReverting ? 'Starting Over...' : 'Start Over'}
+            </button>
             {nullTranscriptionCount > 0 && (
               <button
                 onClick={handleDeleteFailedTranscriptions}

@@ -47,11 +47,14 @@ fi
 echo -e "${GREEN}✓ All prerequisites met${NC}\n"
 
 # Check if client dependencies are installed
+echo -e "${YELLOW}Checking client dependencies...${NC}"
 if [ ! -d "$CLIENT_DIR/node_modules" ]; then
     echo -e "${YELLOW}Installing client dependencies...${NC}"
     cd "$CLIENT_DIR"
     npm install
     echo -e "${GREEN}✓ Client dependencies installed${NC}\n"
+else
+    echo -e "${GREEN}✓ Client dependencies already installed${NC}\n"
 fi
 
 # Check if server virtual environment exists
@@ -63,15 +66,26 @@ if [ ! -d "$SERVER_DIR/.venv" ]; then
 fi
 
 # Check if server dependencies are installed
-if [ ! -f "$SERVER_DIR/.venv/lib/python3.*/site-packages/fastapi/__init__.py" ] && \
-   [ ! -f "$SERVER_DIR/.venv/lib64/python3.*/site-packages/fastapi/__init__.py" ]; then
+echo -e "${YELLOW}Checking server dependencies...${NC}"
+cd "$SERVER_DIR"
+source .venv/bin/activate
+
+# Check if a marker file exists indicating successful installation
+# and if requirements.txt hasn't been modified since then
+REQUIREMENTS_INSTALLED_MARKER=".venv/.requirements_installed"
+
+if [ -f "$REQUIREMENTS_INSTALLED_MARKER" ] && \
+   [ "$REQUIREMENTS_INSTALLED_MARKER" -nt "requirements.txt" ]; then
+    echo -e "${GREEN}✓ Server dependencies already installed${NC}\n"
+else
     echo -e "${YELLOW}Installing server dependencies...${NC}"
-    cd "$SERVER_DIR"
-    source .venv/bin/activate
     pip install -r requirements.txt
-    deactivate
+    # Create marker file to indicate successful installation
+    touch "$REQUIREMENTS_INSTALLED_MARKER"
     echo -e "${GREEN}✓ Server dependencies installed${NC}\n"
 fi
+
+deactivate
 
 # Create log directory if it doesn't exist
 LOG_DIR="$SCRIPT_DIR/logs"

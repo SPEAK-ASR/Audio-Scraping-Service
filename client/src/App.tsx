@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Typography, Box } from '@mui/material';
+import { Navigation } from './components/Navigation';
 import { YoutubeUrlInput } from './components/YoutubeUrlInput';
 import { AudioClipsDisplay } from './components/AudioClipsDisplay';
 import { TranscriptionView } from './components/TranscriptionView';
@@ -7,11 +8,14 @@ import { ProgressIndicator } from './components/ProgressIndicator';
 import { CompletionView } from './components/CompletionView';
 import { Footer } from './components/Footer';
 import { LoadingState } from './components/LoadingState';
+import { StatisticsPage } from './pages/StatisticsPage';
 import type { ClipData, TranscribedClip, VideoMetadata } from './lib/api';
 
 export type ProcessingStep = 'input' | 'processing' | 'clips' | 'transcription' | 'storage' | 'complete';
+export type Page = 'home' | 'statistics';
 
 function App() {
+  const [currentPage, setCurrentPage] = useState<Page>('home');
   const [currentStep, setCurrentStep] = useState<ProcessingStep>('input');
   const [videoId, setVideoId] = useState<string>('');
   const [domain, setDomain] = useState<string>('');
@@ -89,106 +93,125 @@ function App() {
     setProcessingError(errorMessage);
   };
 
-  return (
-    <Box sx={{ minHeight: '100vh', p: 2 }}>
-      <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
-        <Box sx={{ textAlign: 'center', mb: 4, mt: 1}}>
-          <Typography variant="h3" component="h1" fontWeight="bold" sx={{ mb: 1 }}>
-            Audio Processor
-          </Typography>
-          <Typography 
-            variant="body1" 
-            color="text.secondary" 
-            sx={{ 
-              '& .highlight': {
-                color: 'primary.main',
-                fontWeight: 500,
-              }
-            }}
-          >
-            Process YouTube videos into audio clips with{' '}
-            <Typography component="span" className="highlight">
-              transcription
-            </Typography>{' '}
-            and{' '}
-            <Typography component="span" className="highlight">
-              cloud storage
-            </Typography>
-          </Typography>
-        </Box>
-        <ProgressIndicator 
-          currentStep={currentStep} 
-          isProcessing={isProcessing}
-        />
+  const handleNavigate = (page: Page) => {
+    setCurrentPage(page);
+  };
 
-        <Box sx={{ mt: 3 }}>
-          {currentStep === 'input' && (
-            <YoutubeUrlInput 
-              onSubmit={handleYoutubeSubmit}
-              onClipsGenerated={handleClipsGenerated}
-              onError={handleProcessingError}
-              initialError={processingError}
-            />
-          )}
-
-          {currentStep === 'processing' && (
-            <LoadingState
-              title="Processing YouTube video..."
-              description="This may take a few minutes depending on video length"
-            />
-          )}
-
-          {(currentStep === 'clips' || currentStep === 'transcription' || currentStep === 'storage' || currentStep === 'complete') && (
-            <AudioClipsDisplay
-              videoId={videoId}
-              clips={clips}
-              videoMetadata={videoMetadata}
-              onTranscriptionComplete={handleTranscriptionComplete}
-              onTranscriptionStart={handleTranscriptionStart}
-              onStorageStart={handleStorageStart}
-              onStorageComplete={handleStorageComplete}
-              onRevert={handleReset}
-              currentStep={currentStep}
-              isTranscribing={isTranscribing}
-            />
-          )}
-
-          {currentStep === 'complete' && (
-            <CompletionView
-              videoId={videoId}
-              videoMetadata={videoMetadata}
-              totalClips={clips.length}
-              transcriptionCount={transcriptions.length}
-              onReset={handleReset}
-            />
-          )}
-
-          {currentStep === 'transcription' && isTranscribing && (
-            <LoadingState
-              title="Transcribing audio clips..."
-              description="This may take a few minutes depending on the number of clips"
-            />
-          )}
-
-          {currentStep === 'transcription' && !isTranscribing && transcriptions.length > 0 && (
-            <TranscriptionView
-              transcriptions={transcriptions}
-              videoMetadata={videoMetadata}
-              videoId={videoId}
-              onCleanupComplete={handleCleanupComplete}
-              onRevert={handleReset}
-            />
-          )}
-
-          {currentStep === 'storage' && isSavingToCloud && (
-            <LoadingState
-              title="Saving to cloud storage..."
-              description="Uploading audio clips and updating database"
-            />
-          )}
-        </Box>
-
+  // Statistics Page
+  if (currentPage === 'statistics') {
+    return (
+      <Box sx={{ minHeight: '100vh' }}>
+        <Navigation currentPage={currentPage} onNavigate={handleNavigate} />
+        <StatisticsPage onBack={() => setCurrentPage('home')} />
         <Footer />
+      </Box>
+    );
+  }
+
+  // Home Page (Audio Processing)
+  return (
+    <Box sx={{ minHeight: '100vh' }}>
+      <Navigation currentPage={currentPage} onNavigate={handleNavigate} />
+      <Box sx={{ p: 2 }}>
+        <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
+          <Box sx={{ textAlign: 'center', mb: 4, mt: 1}}>
+            <Typography variant="h3" component="h1" fontWeight="bold" sx={{ mb: 1 }}>
+              Audio Processor
+            </Typography>
+            <Typography 
+              variant="body1" 
+              color="text.secondary" 
+              sx={{ 
+                '& .highlight': {
+                  color: 'primary.main',
+                  fontWeight: 500,
+                }
+              }}
+            >
+              Process YouTube videos into audio clips with{' '}
+              <Typography component="span" className="highlight">
+                transcription
+              </Typography>{' '}
+              and{' '}
+              <Typography component="span" className="highlight">
+                cloud storage
+              </Typography>
+            </Typography>
+          </Box>
+          <ProgressIndicator 
+            currentStep={currentStep} 
+            isProcessing={isProcessing}
+          />
+
+          <Box sx={{ mt: 3 }}>
+            {currentStep === 'input' && (
+              <YoutubeUrlInput 
+                onSubmit={handleYoutubeSubmit}
+                onClipsGenerated={handleClipsGenerated}
+                onError={handleProcessingError}
+                initialError={processingError}
+              />
+            )}
+
+            {currentStep === 'processing' && (
+              <LoadingState
+                title="Processing YouTube video..."
+                description="This may take a few minutes depending on video length"
+              />
+            )}
+
+            {(currentStep === 'clips' || currentStep === 'transcription' || currentStep === 'storage' || currentStep === 'complete') && (
+              <AudioClipsDisplay
+                videoId={videoId}
+                clips={clips}
+                videoMetadata={videoMetadata}
+                onTranscriptionComplete={handleTranscriptionComplete}
+                onTranscriptionStart={handleTranscriptionStart}
+                onStorageStart={handleStorageStart}
+                onStorageComplete={handleStorageComplete}
+                onRevert={handleReset}
+                currentStep={currentStep}
+                isTranscribing={isTranscribing}
+              />
+            )}
+
+            {currentStep === 'complete' && (
+              <CompletionView
+                videoId={videoId}
+                videoMetadata={videoMetadata}
+                totalClips={clips.length}
+                transcriptionCount={transcriptions.length}
+                onReset={handleReset}
+              />
+            )}
+
+            {currentStep === 'transcription' && isTranscribing && (
+              <LoadingState
+                title="Transcribing audio clips..."
+                description="This may take a few minutes depending on the number of clips"
+              />
+            )}
+
+            {currentStep === 'transcription' && !isTranscribing && transcriptions.length > 0 && (
+              <TranscriptionView
+                transcriptions={transcriptions}
+                videoMetadata={videoMetadata}
+                videoId={videoId}
+                onCleanupComplete={handleCleanupComplete}
+                onRevert={handleReset}
+              />
+            )}
+
+            {currentStep === 'storage' && isSavingToCloud && (
+              <LoadingState
+                title="Saving to cloud storage..."
+                description="Uploading audio clips and updating database"
+              />
+            )}
+          </Box>
+
+          <Footer />
+        </Box>
       </Box>
     </Box>
   );

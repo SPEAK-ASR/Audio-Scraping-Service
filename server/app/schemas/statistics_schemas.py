@@ -1,0 +1,63 @@
+"""
+Pydantic schemas for statistics API responses.
+"""
+
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from datetime import date as date_type
+
+
+class CategoryDurationData(BaseModel):
+    """Duration statistics by category/domain."""
+    category: str = Field(..., description="Category/domain name")
+    total_duration_hours: float = Field(..., description="Total audio duration in hours")
+    total_duration_minutes: float = Field(..., description="Total audio duration in minutes")
+    clip_count: int = Field(..., description="Number of audio clips")
+    video_count: int = Field(..., description="Number of videos")
+
+
+class TranscriptionStatusData(BaseModel):
+    """Transcription status statistics."""
+    transcribed_count: int = Field(..., description="Number of transcribed audios")
+    non_transcribed_count: int = Field(..., description="Number of non-transcribed audios")
+    transcribed_duration_hours: float = Field(..., description="Duration of transcribed audios in hours")
+    non_transcribed_duration_hours: float = Field(..., description="Duration of non-transcribed audios in hours")
+    total_count: int = Field(..., description="Total number of audios")
+    transcription_rate: float = Field(..., description="Percentage of transcribed audios")
+
+
+class DailyTranscriptionData(BaseModel):
+    """Daily transcription statistics."""
+    date: date_type = Field(..., description="Date")
+    transcription_count: int = Field(..., description="Number of transcriptions created")
+    audio_count: int = Field(..., description="Number of audios processed")
+    total_duration_hours: float = Field(..., description="Total duration in hours")
+
+
+class AdminContributionData(BaseModel):
+    """Admin contribution statistics."""
+    admin: str = Field(..., description="Admin identifier")
+    transcription_count: int = Field(..., description="Number of transcriptions")
+    total_duration_hours: float = Field(..., description="Total duration transcribed in hours")
+    percentage: float = Field(..., description="Percentage of total contributions")
+
+
+class TotalDataSummary(BaseModel):
+    """Overall data summary."""
+    total_videos: int = Field(..., description="Total number of videos")
+    total_audio_clips: int = Field(..., description="Total number of audio clips")
+    total_duration_hours: float = Field(..., description="Total duration of all audios in hours")
+    transcribed_duration_hours: float = Field(..., description="Total duration of transcribed audios in hours")
+    total_transcriptions: int = Field(..., description="Total number of human transcriptions")
+    average_clip_duration_seconds: float = Field(..., description="Average clip duration in seconds")
+
+
+class StatisticsResponse(BaseModel):
+    """Complete statistics response."""
+    success: bool = Field(default=True)
+    message: str = Field(default="Statistics retrieved successfully")
+    summary: TotalDataSummary
+    category_durations: List[CategoryDurationData]
+    transcription_status: TranscriptionStatusData
+    daily_transcriptions: List[DailyTranscriptionData]
+    admin_contributions: List[AdminContributionData]

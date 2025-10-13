@@ -3,7 +3,7 @@ SQLAlchemy model for YouTube_Video table.
 """
 
 from sqlalchemy import Column, Text, BigInteger, Date, DateTime
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ENUM
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -28,6 +28,14 @@ class YouTubeVideo(Base):
     upload_date = Column(Date, nullable=True)
     thumbnail = Column(Text, nullable=True)
     url = Column(Text, nullable=True)
+    # Use existing PostgreSQL enum, pass string values directly
+    domain = Column(ENUM(
+        'education', 'health', 'politics_and_government', 'news_and_current_affairs',
+        'science', 'technology_and_computing', 'business_and_finance', 'entertainment',
+        'food_and_drink', 'law_and_justice', 'environment_and_sustainability',
+        'religion', 'media_marketing', 'history_and_cultural', 'work_and_careers', 'others',
+        name='domain_enum', create_type=False
+    ), nullable=True)
     
     # Relationship to Audio clips
     audio_clips = relationship("Audio", back_populates="youtube_video")

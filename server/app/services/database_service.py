@@ -45,7 +45,7 @@ class DatabaseService:
         
         Args:
             db: Database session
-            metadata: Video metadata from YouTube
+            metadata: Video metadata from YouTube (must include 'domain' field)
             
         Returns:
             Created YouTubeVideo instance
@@ -62,6 +62,12 @@ class DatabaseService:
                     day = int(upload_date_str[6:8])
                     upload_date_obj = date(year, month, day)
             
+            # Handle domain field - pass string directly to database
+            domain_value = metadata.get('domain')
+            if domain_value and not isinstance(domain_value, str):
+                logger.warning(f"Domain value is not a string: {type(domain_value)}, setting to None")
+                domain_value = None
+            
             video = YouTubeVideo(
                 video_id=metadata.get('video_id'),
                 title=metadata.get('title'),
@@ -70,7 +76,8 @@ class DatabaseService:
                 uploader=metadata.get('uploader'),
                 upload_date=upload_date_obj,
                 thumbnail=metadata.get('thumbnail'),
-                url=metadata.get('url')
+                url=metadata.get('url'),
+                domain=domain_value  # Pass string directly, PostgreSQL will validate
             )
             
             db.add(video)

@@ -19,13 +19,14 @@ import { audioApi, type ClipData, type VideoMetadata } from '../lib/api';
 
 interface YoutubeUrlInputProps {
   onSubmit: () => void;
-  onClipsGenerated: (videoId: string, metadata: VideoMetadata, clips: ClipData[]) => void;
+  onClipsGenerated: (videoId: string, domain: string, metadata: VideoMetadata, clips: ClipData[]) => void;
   onError: (errorMessage: string) => void;
   initialError?: string | null;
 }
 
 export function YoutubeUrlInput({ onSubmit, onClipsGenerated, onError, initialError }: YoutubeUrlInputProps) {
   const [url, setUrl] = useState('');
+  const [domain, setDomain] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError || null);
 
@@ -41,16 +42,16 @@ export function YoutubeUrlInput({ onSubmit, onClipsGenerated, onError, initialEr
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim()) return;
+    if (!url.trim() || !domain) return;
 
     setIsLoading(true);
     setError(null);
     onSubmit();
 
     try {
-      const response = await audioApi.splitAudio(url, vadAggressiveness, startPadding, endPadding);
+      const response = await audioApi.splitAudio(url, domain, vadAggressiveness, startPadding, endPadding);
       if (response.success) {
-        onClipsGenerated(response.video_id, response.video_metadata, response.clips);
+        onClipsGenerated(response.video_id, response.domain, response.video_metadata, response.clips);
       } else {
         setError('Failed to process YouTube video');
         setIsLoading(false);
@@ -154,6 +155,37 @@ export function YoutubeUrlInput({ onSubmit, onClipsGenerated, onError, initialEr
             }}
           />
 
+          {/* Domain Selection */}
+          <FormControl size="small" fullWidth required error={!domain && error !== null}>
+            <InputLabel>Video Category *</InputLabel>
+            <Select
+              value={domain}
+              label="Video Category *"
+              onChange={(e) => {
+                setDomain(e.target.value);
+                if (error) setError(null);
+              }}
+              disabled={isLoading}
+            >
+              <MenuItem value="education">Education</MenuItem>
+              <MenuItem value="health">Health</MenuItem>
+              <MenuItem value="politics_and_government">Politics and Government</MenuItem>
+              <MenuItem value="news_and_current_affairs">News and Current Affairs</MenuItem>
+              <MenuItem value="science">Science</MenuItem>
+              <MenuItem value="technology_and_computing">Technology and Computing</MenuItem>
+              <MenuItem value="business_and_finance">Business and Finance</MenuItem>
+              <MenuItem value="entertainment">Entertainment</MenuItem>
+              <MenuItem value="food_and_drink">Food and Drink</MenuItem>
+              <MenuItem value="law_and_justice">Law and Justice</MenuItem>
+              <MenuItem value="environment_and_sustainability">Environment and Sustainability</MenuItem>
+              <MenuItem value="religion">Religion</MenuItem>
+              <MenuItem value="media_marketing">Media Marketing</MenuItem>
+              <MenuItem value="history_and_cultural">History and Cultural</MenuItem>
+              <MenuItem value="work_and_careers">Work and Careers</MenuItem>
+              <MenuItem value="others">Others</MenuItem>
+            </Select>
+          </FormControl>
+
           {/* Advanced Options */}
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
@@ -247,7 +279,7 @@ export function YoutubeUrlInput({ onSubmit, onClipsGenerated, onError, initialEr
           <Button
             type="submit"
             variant="contained"
-            disabled={!url.trim() || !isValidYoutubeUrl(url) || isLoading}
+            disabled={!url.trim() || !domain || !isValidYoutubeUrl(url) || isLoading}
             startIcon={
               isLoading ? (
                 <CircularProgress size={20} color="inherit" />

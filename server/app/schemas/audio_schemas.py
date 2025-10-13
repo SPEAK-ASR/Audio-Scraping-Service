@@ -2,8 +2,17 @@
 Pydantic schemas for API request/response models.
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, HttpUrl, Field
+
+
+# Domain literal type - matches database enum values exactly
+DomainType = Literal[
+    "education", "health", "politics_and_government", "news_and_current_affairs",
+    "science", "technology_and_computing", "business_and_finance", "entertainment",
+    "food_and_drink", "law_and_justice", "environment_and_sustainability",
+    "religion", "media_marketing", "history_and_cultural", "work_and_careers", "others"
+]
 
 
 class AudioProcessingRequest(BaseModel):
@@ -26,6 +35,7 @@ class AudioSplitRequest(BaseModel):
     """Request model for YouTube audio splitting only."""
     
     youtube_url: HttpUrl = Field(..., description="YouTube video URL to process")
+    domain: DomainType = Field(..., description="Video domain category")
     vad_aggressiveness: int = Field(default=2, ge=0, le=3, description="VAD aggressiveness level (0-3)")
     start_padding: float = Field(default=1.0, ge=0, le=5.0, description="Silent padding in seconds to add to beginning of clips")
     end_padding: float = Field(default=0.5, ge=0, le=5.0, description="Silent padding in seconds to add to end of clips")
@@ -80,6 +90,7 @@ class AudioSplitResponse(BaseModel):
     success: bool
     message: str
     video_id: str
+    domain: str
     video_metadata: Dict[str, Any]
     clips: List[Dict[str, Any]]  # Basic clip info without transcription/cloud data
     total_clips: int

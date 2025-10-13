@@ -14,6 +14,7 @@ export type ProcessingStep = 'input' | 'processing' | 'clips' | 'transcription' 
 function App() {
   const [currentStep, setCurrentStep] = useState<ProcessingStep>('input');
   const [videoId, setVideoId] = useState<string>('');
+  const [domain, setDomain] = useState<string>('');
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
   const [clips, setClips] = useState<ClipData[]>([]);
   const [transcriptions, setTranscriptions] = useState<TranscribedClip[]>([]);
@@ -28,8 +29,9 @@ function App() {
     setProcessingError(null);
   };
 
-  const handleClipsGenerated = (videoId: string, metadata: VideoMetadata, clipsData: ClipData[]) => {
+  const handleClipsGenerated = (videoId: string, domain: string, metadata: VideoMetadata, clipsData: ClipData[]) => {
     setVideoId(videoId);
+    setDomain(domain);
     setVideoMetadata(metadata);
     setClips(clipsData);
     setCurrentStep('clips');
@@ -71,6 +73,7 @@ function App() {
   const handleReset = () => {
     setCurrentStep('input');
     setVideoId('');
+    setDomain('');
     setVideoMetadata(null);
     setClips([]);
     setTranscriptions([]);

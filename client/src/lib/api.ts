@@ -34,6 +34,7 @@ export interface AudioSplitResponse {
   success: boolean;
   message: string;
   video_id: string;
+  domain: string;
   video_metadata: VideoMetadata;
   clips: ClipData[];
   total_clips: number;
@@ -72,13 +73,15 @@ export interface CloudStorageResponse {
 
 export const audioApi = {
   splitAudio: async (
-    youtubeUrl: string, 
+    youtubeUrl: string,
+    domain: string,
     vadAggressiveness: number = 2,
     startPadding: number = 1.0,
     endPadding: number = 0.5
   ): Promise<AudioSplitResponse> => {
     const response = await api.post('/split-audio', {
       youtube_url: youtubeUrl,
+      domain: domain,
       vad_aggressiveness: vadAggressiveness,
       start_padding: startPadding,
       end_padding: endPadding,

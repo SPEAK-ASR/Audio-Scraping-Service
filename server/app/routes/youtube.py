@@ -74,7 +74,7 @@ async def split_youtube_audio(
     Step 1: Download YouTube video and split into audio clips using VAD.
     
     Args:
-        request: Parameters for audio splitting including YouTube URL and VAD settings
+        request: Parameters for audio splitting including YouTube URL, domain, and VAD settings
         db: Database session for duplicate checking
         
     Returns:
@@ -83,6 +83,7 @@ async def split_youtube_audio(
     try:
         logger.info(f"Starting audio splitting for YouTube video", extra={
             "url": str(request.youtube_url),
+            "domain": request.domain,
             "vad_aggressiveness": request.vad_aggressiveness,
             "start_padding": request.start_padding,
             "end_padding": request.end_padding
@@ -127,6 +128,9 @@ async def split_youtube_audio(
             end_padding=request.end_padding
         )
         
+        # Add domain to video metadata
+        video_metadata['domain'] = request.domain
+        
         logger.info(f"Successfully created {len(clips_data)} audio clips for video {video_id}")
         
         # Save metadata files for use in subsequent steps
@@ -157,6 +161,7 @@ async def split_youtube_audio(
             success=True,
             message=f"Successfully split audio into {len(clips_data)} clips",
             video_id=video_id,
+            domain=request.domain,
             video_metadata=video_metadata,
             clips=clips_data,
             total_clips=len(clips_data),

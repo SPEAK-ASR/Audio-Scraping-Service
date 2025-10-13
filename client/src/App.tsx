@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Typography, Box } from '@mui/material';
-import { Navigation } from './components/Navigation';
+import { StatisticsFloatingButton } from './components/StatisticsFloatingButton';
 import { YoutubeUrlInput } from './components/YoutubeUrlInput';
 import { AudioClipsDisplay } from './components/AudioClipsDisplay';
 import { TranscriptionView } from './components/TranscriptionView';
@@ -101,7 +101,7 @@ function App() {
   if (currentPage === 'statistics') {
     return (
       <Box sx={{ minHeight: '100vh' }}>
-        <Navigation currentPage={currentPage} onNavigate={handleNavigate} />
+        <StatisticsFloatingButton currentPage={currentPage} onNavigate={handleNavigate} />
         <StatisticsPage onBack={() => setCurrentPage('home')} />
         <Footer />
       </Box>
@@ -111,7 +111,7 @@ function App() {
   // Home Page (Audio Processing)
   return (
     <Box sx={{ minHeight: '100vh' }}>
-      <Navigation currentPage={currentPage} onNavigate={handleNavigate} />
+      <StatisticsFloatingButton currentPage={currentPage} onNavigate={handleNavigate} />
       <Box sx={{ p: 2 }}>
         <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
           <Box sx={{ textAlign: 'center', mb: 4, mt: 1}}>

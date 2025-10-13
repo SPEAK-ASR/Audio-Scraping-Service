@@ -11,7 +11,7 @@ import {
   MenuItem,
   Paper,
 } from '@mui/material';
-import { Refresh, ArrowBack } from '@mui/icons-material';
+import { Refresh } from '@mui/icons-material';
 import { statisticsApi, type StatisticsResponse } from '../lib/statisticsApi';
 import { SummaryCards } from '../components/statistics/SummaryCards';
 import { CategoryDurationChart } from '../components/statistics/CategoryDurationChart';
@@ -98,27 +98,15 @@ export function StatisticsPage({ onBack }: StatisticsPageProps) {
   }
 
   return (
-    <Box sx={{ maxWidth: 1400, mx: 'auto', p: 3 }}>
+    <Box sx={{ maxWidth: 1400, mx: 'auto', p: 2 }}>
       {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            {onBack && (
-              <Button
-                variant="outlined"
-                startIcon={<ArrowBack />}
-                onClick={onBack}
-                sx={{ minWidth: 'auto' }}
-              >
-                Back
-              </Button>
-            )}
-            <Typography variant="h4" fontWeight="bold">
-              Database Statistics
-            </Typography>
-          </Box>
+      <Box sx={{ mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+          <Typography variant="h4" fontWeight="bold">
+            Database Statistics
+          </Typography>
           
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
             <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Time Period</InputLabel>
               <Select
@@ -146,26 +134,26 @@ export function StatisticsPage({ onBack }: StatisticsPageProps) {
           </Box>
         </Box>
         
-        <Typography variant="body1" color="text.secondary">
+        <Typography variant="body2" color="text.secondary">
           Comprehensive overview of your audio transcription database
         </Typography>
       </Box>
 
       {/* Summary Cards */}
-      <Box sx={{ mb: 4 }}>
+      <Box sx={{ mb: 2 }}>
         <SummaryCards summary={statistics.summary} />
       </Box>
 
       {/* Main Charts Grid */}
-      <Box sx={{ display: 'grid', gap: 3, mb: 3 }}>
+      <Box sx={{ display: 'grid', gap: 2, mb: 2 }}>
         {/* Row 1: Two columns */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
           <TranscriptionStatusChart data={statistics.transcription_status} />
-          <CategoryDurationChart data={statistics.category_durations} />
+          <AudioDistributionGraph data={statistics.audio_distribution} />
         </Box>
 
-        {/* Row 2: Audio Distribution */}
-        <AudioDistributionGraph data={statistics.audio_distribution} />
+        {/* Row 2: Category Duration */}
+        <CategoryDurationChart data={statistics.category_durations} />
 
         {/* Row 3: Full width */}
         <DailyTranscriptionGraph data={statistics.daily_transcriptions} />
@@ -178,8 +166,8 @@ export function StatisticsPage({ onBack }: StatisticsPageProps) {
       <Paper
         elevation={0}
         sx={{
-          p: 2,
-          mt: 4,
+          p: 1.5,
+          mt: 2,
           backgroundColor: '#f5f5f5',
           textAlign: 'center',
         }}

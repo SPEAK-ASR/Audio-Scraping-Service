@@ -58,7 +58,7 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
   ];
 
   return (
-    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 3 }}>
+    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 2 }}>
       {cards.map((card, index) => (
         <Card
           key={index}
@@ -68,21 +68,15 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
             background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
             color: 'white',
             border: `1px solid ${card.borderColor}`,
-            transition: 'transform 0.2s, box-shadow 0.2s',
-            '&:hover': {
-              transform: 'translateY(-4px)',
-              boxShadow: `0 8px 24px ${card.color}40`,
-              borderColor: card.color,
-            },
           }}
         >
-          <CardContent>
+          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
             <Box
               sx={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                mb: 2,
+                mb: 1,
               }}
             >
               <Typography variant="body2" sx={{ color: '#b0bec5' }} fontWeight={500}>
@@ -93,7 +87,7 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
                   background: `linear-gradient(135deg, ${card.bgColor}, ${card.bgColor})`,
                   color: card.color,
                   borderRadius: 2,
-                  p: 1,
+                  p: 0.75,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -103,7 +97,7 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
                 {card.icon}
               </Box>
             </Box>
-            <Typography variant="h4" fontWeight="bold" sx={{ mb: 0.5 }} color="white">
+            <Typography variant="h4" fontWeight="bold" sx={{ mb: 0.25 }} color="white">
               {card.value}
             </Typography>
             {card.subtitle && (

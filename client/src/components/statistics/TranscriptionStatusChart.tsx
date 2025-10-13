@@ -18,11 +18,11 @@ export function TranscriptionStatusChart({ data }: TranscriptionStatusChartProps
         color: 'white'
       }}
     >
-      <CardContent>
-        <Typography variant="h6" gutterBottom fontWeight="bold" color="white">
+      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+        <Typography variant="h6" gutterBottom fontWeight="bold" color="white" sx={{ mb: 0.5 }}>
           Transcription Status
         </Typography>
-        <Typography variant="body2" sx={{ mb: 3, color: '#b0bec5' }}>
+        <Typography variant="body2" sx={{ mb: 2, color: '#b0bec5' }}>
           Transcribed vs non-transcribed audio clips
         </Typography>
 
@@ -30,11 +30,11 @@ export function TranscriptionStatusChart({ data }: TranscriptionStatusChartProps
         <Box
           sx={{
             width: '100%',
-            height: 40,
+            height: 32,
             borderRadius: 2,
             overflow: 'hidden',
             display: 'flex',
-            mb: 3,
+            mb: 2,
             border: '1px solid rgba(100, 181, 246, 0.2)',
           }}
         >
@@ -77,19 +77,19 @@ export function TranscriptionStatusChart({ data }: TranscriptionStatusChartProps
           {/* Transcribed */}
           <Box
             sx={{
-              p: 2,
+              p: 1.5,
               borderRadius: 2,
               background: 'linear-gradient(135deg, rgba(102, 187, 106, 0.2) 0%, rgba(76, 175, 80, 0.2) 100%)',
               border: '1px solid rgba(102, 187, 106, 0.4)',
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-              <CheckCircle sx={{ color: '#81c784', mr: 1 }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+              <CheckCircle sx={{ color: '#81c784', mr: 1, fontSize: 20 }} />
               <Typography variant="body2" fontWeight="bold" sx={{ color: '#a5d6a7' }}>
                 Transcribed
               </Typography>
             </Box>
-            <Typography variant="h5" fontWeight="bold" sx={{ mb: 0.5 }} color="white">
+            <Typography variant="h5" fontWeight="bold" sx={{ mb: 0.25 }} color="white">
               {data.transcribed_count.toLocaleString()}
             </Typography>
             <Typography variant="caption" sx={{ color: '#a5d6a7' }}>
@@ -100,19 +100,19 @@ export function TranscriptionStatusChart({ data }: TranscriptionStatusChartProps
           {/* Non-transcribed */}
           <Box
             sx={{
-              p: 2,
+              p: 1.5,
               borderRadius: 2,
               background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%)',
               border: '1px solid rgba(255, 255, 255, 0.1)',
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-              <RadioButtonUnchecked sx={{ color: '#90a4ae', mr: 1 }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+              <RadioButtonUnchecked sx={{ color: '#90a4ae', mr: 1, fontSize: 20 }} />
               <Typography variant="body2" fontWeight="bold" sx={{ color: '#b0bec5' }}>
                 Not Transcribed
               </Typography>
             </Box>
-            <Typography variant="h5" fontWeight="bold" sx={{ mb: 0.5 }} color="white">
+            <Typography variant="h5" fontWeight="bold" sx={{ mb: 0.25 }} color="white">
               {data.non_transcribed_count.toLocaleString()}
             </Typography>
             <Typography variant="caption" sx={{ color: '#b0bec5' }}>
@@ -124,15 +124,15 @@ export function TranscriptionStatusChart({ data }: TranscriptionStatusChartProps
         {/* Total */}
         <Box
           sx={{
-            mt: 2,
-            p: 2,
+            mt: 1.5,
+            p: 1.5,
             borderRadius: 2,
             background: 'linear-gradient(135deg, rgba(100, 181, 246, 0.15) 0%, rgba(63, 81, 181, 0.15) 100%)',
             border: '1px solid rgba(100, 181, 246, 0.3)',
             textAlign: 'center',
           }}
         >
-          <Typography variant="body2" sx={{ color: '#90caf9' }} gutterBottom>
+          <Typography variant="body2" sx={{ color: '#90caf9', mb: 0.5 }}>
             Total Audio Clips
           </Typography>
           <Typography variant="h4" fontWeight="bold" color="white">

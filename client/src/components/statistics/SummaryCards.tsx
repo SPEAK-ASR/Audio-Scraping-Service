@@ -25,31 +25,35 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
       title: 'Total Videos',
       value: summary.total_videos.toLocaleString(),
       icon: <VideoLibrary sx={{ fontSize: 40 }} />,
-      color: '#1976d2',
-      bgColor: '#e3f2fd',
+      color: '#64b5f6',
+      bgColor: 'rgba(100, 181, 246, 0.15)',
+      borderColor: 'rgba(100, 181, 246, 0.3)',
     },
     {
       title: 'Total Audio Clips',
       value: summary.total_audio_clips.toLocaleString(),
       icon: <AudioFile sx={{ fontSize: 40 }} />,
-      color: '#9c27b0',
-      bgColor: '#f3e5f5',
+      color: '#ba68c8',
+      bgColor: 'rgba(186, 104, 200, 0.15)',
+      borderColor: 'rgba(186, 104, 200, 0.3)',
     },
     {
       title: 'Total Duration',
       value: formatHours(summary.total_duration_hours),
       subtitle: `Avg: ${formatSeconds(summary.average_clip_duration_seconds)} per clip`,
       icon: <AccessTime sx={{ fontSize: 40 }} />,
-      color: '#f57c00',
-      bgColor: '#fff3e0',
+      color: '#ffb74d',
+      bgColor: 'rgba(255, 183, 77, 0.15)',
+      borderColor: 'rgba(255, 183, 77, 0.3)',
     },
     {
       title: 'Transcribed Duration',
       value: formatHours(summary.transcribed_duration_hours),
       subtitle: `${summary.total_transcriptions.toLocaleString()} transcriptions`,
       icon: <CheckCircle sx={{ fontSize: 40 }} />,
-      color: '#388e3c',
-      bgColor: '#e8f5e9',
+      color: '#81c784',
+      bgColor: 'rgba(129, 199, 132, 0.15)',
+      borderColor: 'rgba(129, 199, 132, 0.3)',
     },
   ];
 
@@ -61,10 +65,14 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
           elevation={2}
           sx={{
             height: '100%',
+            background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+            color: 'white',
+            border: `1px solid ${card.borderColor}`,
             transition: 'transform 0.2s, box-shadow 0.2s',
             '&:hover': {
               transform: 'translateY(-4px)',
-              boxShadow: 4,
+              boxShadow: `0 8px 24px ${card.color}40`,
+              borderColor: card.color,
             },
           }}
         >
@@ -77,28 +85,29 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
                 mb: 2,
               }}
             >
-              <Typography variant="body2" color="text.secondary" fontWeight={500}>
+              <Typography variant="body2" sx={{ color: '#b0bec5' }} fontWeight={500}>
                 {card.title}
               </Typography>
               <Box
                 sx={{
-                  backgroundColor: card.bgColor,
+                  background: `linear-gradient(135deg, ${card.bgColor}, ${card.bgColor})`,
                   color: card.color,
                   borderRadius: 2,
                   p: 1,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  border: `1px solid ${card.borderColor}`,
                 }}
               >
                 {card.icon}
               </Box>
             </Box>
-            <Typography variant="h4" fontWeight="bold" sx={{ mb: 0.5 }}>
+            <Typography variant="h4" fontWeight="bold" sx={{ mb: 0.5 }} color="white">
               {card.value}
             </Typography>
             {card.subtitle && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" sx={{ color: '#90caf9' }}>
                 {card.subtitle}
               </Typography>
             )}

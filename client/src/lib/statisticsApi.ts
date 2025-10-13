@@ -31,6 +31,13 @@ export interface AdminContributionData {
   percentage: number;
 }
 
+export interface AudioDurationDistribution {
+  range: string;
+  count: number;
+  total_duration_hours: number;
+  percentage: number;
+}
+
 export interface TotalDataSummary {
   total_videos: number;
   total_audio_clips: number;
@@ -48,6 +55,7 @@ export interface StatisticsResponse {
   transcription_status: TranscriptionStatusData;
   daily_transcriptions: DailyTranscriptionData[];
   admin_contributions: AdminContributionData[];
+  audio_distribution: AudioDurationDistribution[];
 }
 
 export const statisticsApi = {
@@ -96,6 +104,14 @@ export const statisticsApi = {
    */
   getAdminContributions: async (): Promise<{ success: boolean; data: AdminContributionData[] }> => {
     const response = await api.get('/statistics/admin-contributions');
+    return response.data;
+  },
+
+  /**
+   * Get audio duration distribution
+   */
+  getAudioDistribution: async (): Promise<{ success: boolean; data: AudioDurationDistribution[] }> => {
+    const response = await api.get('/statistics/audio-distribution');
     return response.data;
   },
 };

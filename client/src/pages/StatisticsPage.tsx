@@ -18,6 +18,7 @@ import { CategoryDurationChart } from '../components/statistics/CategoryDuration
 import { TranscriptionStatusChart } from '../components/statistics/TranscriptionStatusChart';
 import { DailyTranscriptionGraph } from '../components/statistics/DailyTranscriptionGraph';
 import { AdminContributionChart } from '../components/statistics/AdminContributionChart';
+import { AudioDistributionGraph } from '../components/statistics/AudioDistributionGraph';
 
 interface StatisticsPageProps {
   onBack?: () => void;
@@ -163,10 +164,13 @@ export function StatisticsPage({ onBack }: StatisticsPageProps) {
           <CategoryDurationChart data={statistics.category_durations} />
         </Box>
 
-        {/* Row 2: Full width */}
-        <DailyTranscriptionGraph data={statistics.daily_transcriptions} />
+        {/* Row 2: Audio Distribution */}
+        <AudioDistributionGraph data={statistics.audio_distribution} />
 
         {/* Row 3: Full width */}
+        <DailyTranscriptionGraph data={statistics.daily_transcriptions} />
+
+        {/* Row 4: Full width */}
         <AdminContributionChart data={statistics.admin_contributions} />
       </Box>
 

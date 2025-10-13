@@ -236,6 +236,92 @@ class StatisticsService:
             raise
     
     @staticmethod
+    async def get_audio_distribution(db: AsyncSession) -> List[Dict[str, Any]]:
+        """
+        Get distribution of audio clips by duration ranges.
+        Uses fine-grained 0.5-second intervals for the 4-10s range.
+        
+        Returns:
+            List of dictionaries containing duration range statistics
+        """
+        try:
+            # Define fine-grained duration ranges (0.5s intervals for 4-10s range)
+            ranges = [
+                (0, 4, '0-4s'),
+                (4.0, 4.5, '4.0-4.5s'),
+                (4.5, 5.0, '4.5-5.0s'),
+                (5.0, 5.5, '5.0-5.5s'),
+                (5.5, 6.0, '5.5-6.0s'),
+                (6.0, 6.5, '6.0-6.5s'),
+                (6.5, 7.0, '6.5-7.0s'),
+                (7.0, 7.5, '7.0-7.5s'),
+                (7.5, 8.0, '7.5-8.0s'),
+                (8.0, 8.5, '8.0-8.5s'),
+                (8.5, 9.0, '8.5-9.0s'),
+                (9.0, 9.5, '9.0-9.5s'),
+                (9.5, 10.0, '9.5-10.0s'),
+                (10, float('inf'), '10s+')
+            ]
+            
+            # Get total count for percentage calculation
+            total_count_query = select(func.count(Audio.audio_id)).where(Audio.padded_duration.isnot(None))
+            total_result = await db.execute(total_count_query)
+            total_clips = total_result.scalar() or 0
+            
+            distribution_data = []
+            
+            for min_dur, max_dur, range_label in ranges:
+                # Query for clips in this range
+                if max_dur == float('inf'):
+                    query = (
+                        select(
+                            func.count(Audio.audio_id).label('count'),
+                            func.coalesce(func.sum(Audio.padded_duration), 0).label('total_duration')
+                        )
+                        .where(
+                            and_(
+                                Audio.padded_duration.isnot(None),
+                                Audio.padded_duration >= min_dur
+                            )
+                        )
+                    )
+                else:
+                    query = (
+                        select(
+                            func.count(Audio.audio_id).label('count'),
+                            func.coalesce(func.sum(Audio.padded_duration), 0).label('total_duration')
+                        )
+                        .where(
+                            and_(
+                                Audio.padded_duration.isnot(None),
+                                Audio.padded_duration >= min_dur,
+                                Audio.padded_duration < max_dur
+                            )
+                        )
+                    )
+                
+                result = await db.execute(query)
+                row = result.first()
+                
+                count = row.count if row else 0
+                total_seconds = float(row.total_duration if row else 0)
+                percentage = (count / total_clips * 100) if total_clips > 0 else 0
+                
+                distribution_data.append({
+                    'range': range_label,
+                    'count': count,
+                    'total_duration_hours': total_seconds / 3600,
+                    'percentage': round(percentage, 2)
+                })
+            
+            logger.info(f"Retrieved audio distribution for {len(distribution_data)} ranges")
+            return distribution_data
+            
+        except Exception as e:
+            logger.error(f"Error getting audio distribution: {e}", exc_info=True)
+            raise
+    
+    @staticmethod
     async def get_total_summary(db: AsyncSession) -> Dict[str, Any]:
         """
         Get overall summary statistics.
@@ -314,6 +400,7 @@ class StatisticsService:
             transcription_status = await StatisticsService.get_transcription_status(db)
             daily_transcriptions = await StatisticsService.get_daily_transcriptions(db, days)
             admin_contributions = await StatisticsService.get_admin_contributions(db)
+            audio_distribution = await StatisticsService.get_audio_distribution(db)
             
             statistics = {
                 'success': True,
@@ -322,7 +409,8 @@ class StatisticsService:
                 'category_durations': category_durations,
                 'transcription_status': transcription_status,
                 'daily_transcriptions': daily_transcriptions,
-                'admin_contributions': admin_contributions
+                'admin_contributions': admin_contributions,
+                'audio_distribution': audio_distribution
             }
             
             logger.info("Successfully retrieved all statistics")

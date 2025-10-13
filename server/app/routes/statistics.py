@@ -193,3 +193,31 @@ async def get_admin_contributions(
             status_code=500,
             detail=f"Failed to retrieve admin contributions: {str(e)}"
         )
+
+
+@router.get("/audio-distribution")
+async def get_audio_distribution(
+    db: AsyncSession = Depends(get_async_database_session)
+):
+    """
+    Get audio duration distribution statistics.
+    
+    Returns:
+        Distribution of audio clips by duration ranges
+    """
+    try:
+        logger.info("Fetching audio distribution")
+        
+        distribution = await StatisticsService.get_audio_distribution(db)
+        
+        return {
+            "success": True,
+            "data": distribution
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching audio distribution: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve audio distribution: {str(e)}"
+        )

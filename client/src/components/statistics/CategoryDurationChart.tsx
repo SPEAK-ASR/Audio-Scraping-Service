@@ -29,12 +29,18 @@ export function CategoryDurationChart({ data }: CategoryDurationChartProps) {
   };
 
   return (
-    <Card elevation={2}>
+    <Card 
+      elevation={2}
+      sx={{
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        color: 'white'
+      }}
+    >
       <CardContent>
-        <Typography variant="h6" gutterBottom fontWeight="bold">
+        <Typography variant="h6" gutterBottom fontWeight="bold" color="white">
           Duration by Category
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+        <Typography variant="body2" sx={{ mb: 3, color: '#b0bec5' }}>
           Total audio duration collected per category
         </Typography>
 
@@ -45,14 +51,14 @@ export function CategoryDurationChart({ data }: CategoryDurationChartProps) {
             return (
               <Box key={item.category} sx={{ mb: 3 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                  <Typography variant="body2" fontWeight={500}>
+                  <Typography variant="body2" fontWeight={500} color="white">
                     {formatCategoryName(item.category)}
                   </Typography>
                   <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
-                    <Typography variant="body2" color="text.secondary" fontSize="0.75rem">
+                    <Typography variant="body2" sx={{ color: '#90caf9' }} fontSize="0.75rem">
                       {item.clip_count} clips · {item.video_count} videos
                     </Typography>
-                    <Typography variant="body2" fontWeight="bold">
+                    <Typography variant="body2" fontWeight="bold" color="white">
                       {item.total_duration_hours.toFixed(2)} hrs
                     </Typography>
                   </Box>
@@ -61,20 +67,22 @@ export function CategoryDurationChart({ data }: CategoryDurationChartProps) {
                 <Box
                   sx={{
                     width: '100%',
-                    height: 10,
-                    backgroundColor: '#f5f5f5',
-                    borderRadius: 1,
+                    height: 12,
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: 1.5,
                     overflow: 'hidden',
                     position: 'relative',
+                    border: '1px solid rgba(100, 181, 246, 0.1)',
                   }}
                 >
                   <Box
                     sx={{
                       width: `${percentage}%`,
                       height: '100%',
-                      backgroundColor: getCategoryColor(index),
+                      background: `linear-gradient(90deg, ${getCategoryColor(index)}, ${getCategoryColor(index)}dd)`,
                       transition: 'width 0.3s ease',
-                      borderRadius: 1,
+                      borderRadius: 1.5,
+                      boxShadow: `0 2px 8px ${getCategoryColor(index)}40`,
                     }}
                   />
                 </Box>
@@ -85,7 +93,7 @@ export function CategoryDurationChart({ data }: CategoryDurationChartProps) {
 
         {sortedData.length === 0 && (
           <Box sx={{ textAlign: 'center', py: 4 }}>
-            <Typography color="text.secondary">
+            <Typography sx={{ color: '#78909c' }}>
               No category data available
             </Typography>
           </Box>

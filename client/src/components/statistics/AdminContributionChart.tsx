@@ -30,15 +30,21 @@ export function AdminContributionChart({ data }: AdminContributionChartProps) {
   const totalContributions = sortedData.reduce((sum, d) => sum + d.transcription_count, 0);
 
   return (
-    <Card elevation={2}>
+    <Card 
+      elevation={2}
+      sx={{
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        color: 'white'
+      }}
+    >
       <CardContent>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-          <People sx={{ mr: 1, color: '#1976d2' }} />
-          <Typography variant="h6" fontWeight="bold">
+          <People sx={{ mr: 1, color: '#64b5f6' }} />
+          <Typography variant="h6" fontWeight="bold" color="white">
             Contributor Statistics
           </Typography>
         </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+        <Typography variant="body2" sx={{ mb: 3, color: '#b0bec5' }}>
           Transcription contributions by admins and contributors
         </Typography>
 
@@ -50,31 +56,32 @@ export function AdminContributionChart({ data }: AdminContributionChartProps) {
             gap: 2,
             mb: 3,
             p: 2,
-            backgroundColor: '#f5f5f5',
+            background: 'linear-gradient(135deg, rgba(100, 181, 246, 0.15) 0%, rgba(63, 81, 181, 0.15) 100%)',
             borderRadius: 2,
+            border: '1px solid rgba(100, 181, 246, 0.3)',
           }}
         >
           <Box>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{ color: '#90caf9' }}>
               Total Contributors
             </Typography>
-            <Typography variant="h6" fontWeight="bold">
+            <Typography variant="h6" fontWeight="bold" color="white">
               {sortedData.length}
             </Typography>
           </Box>
           <Box>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{ color: '#90caf9' }}>
               Total Contributions
             </Typography>
-            <Typography variant="h6" fontWeight="bold">
+            <Typography variant="h6" fontWeight="bold" color="white">
               {totalContributions.toLocaleString()}
             </Typography>
           </Box>
           <Box>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{ color: '#90caf9' }}>
               Total Hours
             </Typography>
-            <Typography variant="h6" fontWeight="bold">
+            <Typography variant="h6" fontWeight="bold" color="white">
               {sortedData.reduce((sum, d) => sum + d.total_duration_hours, 0).toFixed(2)}
             </Typography>
           </Box>
@@ -92,7 +99,7 @@ export function AdminContributionChart({ data }: AdminContributionChartProps) {
                 sx={{
                   mb: 2.5,
                   pb: 2.5,
-                  borderBottom: index < sortedData.length - 1 ? '1px solid #f0f0f0' : 'none',
+                  borderBottom: index < sortedData.length - 1 ? '1px solid rgba(100, 181, 246, 0.1)' : 'none',
                 }}
               >
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
@@ -100,8 +107,9 @@ export function AdminContributionChart({ data }: AdminContributionChartProps) {
                     sx={{
                       width: 40,
                       height: 40,
-                      backgroundColor: isNonAdmin ? '#9e9e9e' : getAdminColor(index),
+                      backgroundColor: isNonAdmin ? '#78909c' : getAdminColor(index),
                       mr: 2,
+                      border: '2px solid rgba(100, 181, 246, 0.2)',
                     }}
                   >
                     {isNonAdmin ? <People /> : <Person />}
@@ -109,19 +117,19 @@ export function AdminContributionChart({ data }: AdminContributionChartProps) {
                   
                   <Box sx={{ flex: 1 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                      <Typography variant="body1" fontWeight={500}>
+                      <Typography variant="body1" fontWeight={500} color="white">
                         {formatAdminName(contributor.admin)}
                       </Typography>
-                      <Typography variant="body2" fontWeight="bold" color="primary">
+                      <Typography variant="body2" fontWeight="bold" sx={{ color: '#64b5f6' }}>
                         {contributor.percentage.toFixed(1)}%
                       </Typography>
                     </Box>
                     
                     <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
-                      <Typography variant="caption" color="text.secondary">
+                      <Typography variant="caption" sx={{ color: '#90caf9' }}>
                         {contributor.transcription_count.toLocaleString()} transcriptions
                       </Typography>
-                      <Typography variant="caption" color="text.secondary">
+                      <Typography variant="caption" sx={{ color: '#90caf9' }}>
                         {contributor.total_duration_hours.toFixed(2)} hours
                       </Typography>
                     </Box>
@@ -130,19 +138,21 @@ export function AdminContributionChart({ data }: AdminContributionChartProps) {
                     <Box
                       sx={{
                         width: '100%',
-                        height: 8,
-                        backgroundColor: '#f5f5f5',
-                        borderRadius: 1,
+                        height: 10,
+                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                        borderRadius: 1.5,
                         overflow: 'hidden',
+                        border: '1px solid rgba(100, 181, 246, 0.1)',
                       }}
                     >
                       <Box
                         sx={{
                           width: `${barWidth}%`,
                           height: '100%',
-                          backgroundColor: isNonAdmin ? '#9e9e9e' : getAdminColor(index),
+                          background: `linear-gradient(90deg, ${isNonAdmin ? '#78909c' : getAdminColor(index)}, ${isNonAdmin ? '#78909c' : getAdminColor(index)}dd)`,
                           transition: 'width 0.3s ease',
-                          borderRadius: 1,
+                          borderRadius: 1.5,
+                          boxShadow: `0 2px 8px ${isNonAdmin ? '#78909c' : getAdminColor(index)}40`,
                         }}
                       />
                     </Box>
@@ -155,7 +165,7 @@ export function AdminContributionChart({ data }: AdminContributionChartProps) {
 
         {sortedData.length === 0 && (
           <Box sx={{ textAlign: 'center', py: 4 }}>
-            <Typography color="text.secondary">
+            <Typography sx={{ color: '#78909c' }}>
               No contribution data available
             </Typography>
           </Box>

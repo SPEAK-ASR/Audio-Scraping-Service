@@ -42,6 +42,14 @@ class AdminContributionData(BaseModel):
     percentage: float = Field(..., description="Percentage of total contributions")
 
 
+class AudioDurationDistribution(BaseModel):
+    """Audio duration distribution statistics."""
+    range: str = Field(..., description="Duration range (e.g., '0-5s', '5-10s')")
+    count: int = Field(..., description="Number of audio clips in this range")
+    total_duration_hours: float = Field(..., description="Total duration in hours for this range")
+    percentage: float = Field(..., description="Percentage of total clips")
+
+
 class TotalDataSummary(BaseModel):
     """Overall data summary."""
     total_videos: int = Field(..., description="Total number of videos")
@@ -61,3 +69,4 @@ class StatisticsResponse(BaseModel):
     transcription_status: TranscriptionStatusData
     daily_transcriptions: List[DailyTranscriptionData]
     admin_contributions: List[AdminContributionData]
+    audio_distribution: List[AudioDurationDistribution]

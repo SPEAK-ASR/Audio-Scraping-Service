@@ -60,6 +60,50 @@ class TotalDataSummary(BaseModel):
     average_clip_duration_seconds: float = Field(..., description="Average clip duration in seconds")
 
 
+class SpeakerGenderData(BaseModel):
+    """Speaker gender distribution."""
+    gender: str = Field(..., description="Gender category")
+    count: int = Field(..., description="Number of transcriptions")
+
+
+class AudioSuitabilityData(BaseModel):
+    """Audio suitability statistics."""
+    suitable: int = Field(..., description="Number of suitable audios")
+    unsuitable: int = Field(..., description="Number of unsuitable audios")
+    unknown: int = Field(..., description="Number with unknown suitability")
+
+
+class NoiseData(BaseModel):
+    """Noise statistics."""
+    with_noise: int = Field(..., description="Number of audios with noise")
+    without_noise: int = Field(..., description="Number of audios without noise")
+    unknown: int = Field(..., description="Number with unknown noise status")
+
+
+class CodeMixingData(BaseModel):
+    """Code mixing statistics."""
+    code_mixed: int = Field(..., description="Number of code-mixed transcriptions")
+    not_mixed: int = Field(..., description="Number of non-code-mixed transcriptions")
+    unknown: int = Field(..., description="Number with unknown code-mixing status")
+
+
+class SpeakerOverlappingData(BaseModel):
+    """Speaker overlapping statistics."""
+    with_overlap: int = Field(..., description="Number with speaker overlapping")
+    without_overlap: int = Field(..., description="Number without speaker overlapping")
+    unknown: int = Field(..., description="Number with unknown overlapping status")
+
+
+class TranscriptionMetadata(BaseModel):
+    """Transcription metadata statistics."""
+    total_transcriptions: int = Field(..., description="Total transcriptions")
+    audio_suitability: AudioSuitabilityData
+    speaker_gender: List[SpeakerGenderData]
+    noise: NoiseData
+    code_mixing: CodeMixingData
+    speaker_overlapping: SpeakerOverlappingData
+
+
 class StatisticsResponse(BaseModel):
     """Complete statistics response."""
     success: bool = Field(default=True)
@@ -70,3 +114,4 @@ class StatisticsResponse(BaseModel):
     daily_transcriptions: List[DailyTranscriptionData]
     admin_contributions: List[AdminContributionData]
     audio_distribution: List[AudioDurationDistribution]
+    transcription_metadata: TranscriptionMetadata

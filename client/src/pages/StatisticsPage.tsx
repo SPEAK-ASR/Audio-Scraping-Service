@@ -18,6 +18,7 @@ import { TranscriptionStatusChart } from '../components/statistics/Transcription
 import { DailyTranscriptionGraph } from '../components/statistics/DailyTranscriptionGraph';
 import { AdminContributionChart } from '../components/statistics/AdminContributionChart';
 import { AudioDistributionGraph } from '../components/statistics/AudioDistributionGraph';
+import { TranscriptionMetadataChart } from '../components/statistics/TranscriptionMetadataChart';
 
 interface StatisticsPageProps {
   onBack?: () => void;
@@ -145,6 +146,9 @@ export function StatisticsPage({ onBack }: StatisticsPageProps) {
 
       {/* Main Charts Grid */}
       <Box sx={{ display: 'grid', gap: 2, mb: 2 }}>
+        {/* Transcription Quality Metrics - Full Width */}
+        <TranscriptionMetadataChart data={statistics.transcription_metadata} />
+
         {/* Row 1: Two columns */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
           {/* Left Column */}
@@ -157,6 +161,7 @@ export function StatisticsPage({ onBack }: StatisticsPageProps) {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <AudioDistributionGraph data={statistics.audio_distribution} />
             <DailyTranscriptionGraph data={statistics.daily_transcriptions} />
+            {/* <TranscriptionMetadataChart data={statistics.transcription_metadata} /> */}
           </Box>
         </Box>
       </Box>

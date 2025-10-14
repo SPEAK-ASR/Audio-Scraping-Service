@@ -381,6 +381,121 @@ class StatisticsService:
             raise
     
     @staticmethod
+    async def get_transcription_metadata(db: AsyncSession) -> Dict[str, Any]:
+        """
+        Get statistics on transcription metadata (quality indicators).
+        For metadata like noise, code_mixing, overlapping, and gender, 
+        only count transcriptions where is_audio_suitable = True.
+        
+        Returns:
+            Dictionary containing metadata statistics
+        """
+        try:
+            # Get total transcriptions count
+            total_query = select(func.count(Transcription.trans_id))
+            total_result = await db.execute(total_query)
+            total_transcriptions = total_result.scalar() or 0
+            
+            # Audio suitability (count all transcriptions for this metric)
+            audio_suitable_query = (
+                select(
+                    func.count(case((Transcription.is_audio_suitable == True, 1))).label('suitable'),
+                    func.count(case((Transcription.is_audio_suitable == False, 1))).label('unsuitable'),
+                    func.count(case((Transcription.is_audio_suitable.is_(None), 1))).label('unknown')
+                )
+            )
+            audio_suitable_result = await db.execute(audio_suitable_query)
+            audio_suitable_row = audio_suitable_result.first()
+            
+            # Speaker gender distribution (ONLY from suitable audios)
+            gender_query = (
+                select(
+                    cast(Transcription.speaker_gender, Text).label('gender'),
+                    func.count(Transcription.trans_id).label('count')
+                )
+                .where(
+                    and_(
+                        Transcription.speaker_gender.isnot(None),
+                        Transcription.is_audio_suitable == True
+                    )
+                )
+                .group_by('gender')
+            )
+            gender_result = await db.execute(gender_query)
+            gender_rows = gender_result.all()
+            
+            # Has noise (ONLY from suitable audios)
+            noise_query = (
+                select(
+                    func.count(case((Transcription.has_noise == True, 1))).label('with_noise'),
+                    func.count(case((Transcription.has_noise == False, 1))).label('without_noise'),
+                    func.count(case((Transcription.has_noise.is_(None), 1))).label('unknown')
+                )
+                .where(Transcription.is_audio_suitable == True)
+            )
+            noise_result = await db.execute(noise_query)
+            noise_row = noise_result.first()
+            
+            # Is code mixed (ONLY from suitable audios)
+            code_mixed_query = (
+                select(
+                    func.count(case((Transcription.is_code_mixed == True, 1))).label('code_mixed'),
+                    func.count(case((Transcription.is_code_mixed == False, 1))).label('not_mixed'),
+                    func.count(case((Transcription.is_code_mixed.is_(None), 1))).label('unknown')
+                )
+                .where(Transcription.is_audio_suitable == True)
+            )
+            code_mixed_result = await db.execute(code_mixed_query)
+            code_mixed_row = code_mixed_result.first()
+            
+            # Speaker overlapping (ONLY from suitable audios)
+            overlapping_query = (
+                select(
+                    func.count(case((Transcription.is_speaker_overlappings_exist == True, 1))).label('with_overlap'),
+                    func.count(case((Transcription.is_speaker_overlappings_exist == False, 1))).label('without_overlap'),
+                    func.count(case((Transcription.is_speaker_overlappings_exist.is_(None), 1))).label('unknown')
+                )
+                .where(Transcription.is_audio_suitable == True)
+            )
+            overlapping_result = await db.execute(overlapping_query)
+            overlapping_row = overlapping_result.first()
+            
+            metadata = {
+                'total_transcriptions': total_transcriptions,
+                'audio_suitability': {
+                    'suitable': audio_suitable_row.suitable if audio_suitable_row else 0,
+                    'unsuitable': audio_suitable_row.unsuitable if audio_suitable_row else 0,
+                    'unknown': audio_suitable_row.unknown if audio_suitable_row else 0
+                },
+                'speaker_gender': [
+                    {'gender': row.gender or 'unknown', 'count': row.count}
+                    for row in gender_rows
+                ],
+                'noise': {
+                    'with_noise': noise_row.with_noise if noise_row else 0,
+                    'without_noise': noise_row.without_noise if noise_row else 0,
+                    'unknown': noise_row.unknown if noise_row else 0
+                },
+                'code_mixing': {
+                    'code_mixed': code_mixed_row.code_mixed if code_mixed_row else 0,
+                    'not_mixed': code_mixed_row.not_mixed if code_mixed_row else 0,
+                    'unknown': code_mixed_row.unknown if code_mixed_row else 0
+                },
+                'speaker_overlapping': {
+                    'with_overlap': overlapping_row.with_overlap if overlapping_row else 0,
+                    'without_overlap': overlapping_row.without_overlap if overlapping_row else 0,
+                    'unknown': overlapping_row.unknown if overlapping_row else 0
+                }
+            }
+            
+            logger.info(f"Retrieved transcription metadata for {total_transcriptions} transcriptions")
+            return metadata
+            
+        except Exception as e:
+            logger.error(f"Error getting transcription metadata: {e}", exc_info=True)
+            raise
+    
+    @staticmethod
     async def get_all_statistics(db: AsyncSession, days: int = 30) -> Dict[str, Any]:
         """
         Get all statistics in one call.
@@ -401,6 +516,7 @@ class StatisticsService:
             daily_transcriptions = await StatisticsService.get_daily_transcriptions(db, days)
             admin_contributions = await StatisticsService.get_admin_contributions(db)
             audio_distribution = await StatisticsService.get_audio_distribution(db)
+            transcription_metadata = await StatisticsService.get_transcription_metadata(db)
             
             statistics = {
                 'success': True,
@@ -410,7 +526,8 @@ class StatisticsService:
                 'transcription_status': transcription_status,
                 'daily_transcriptions': daily_transcriptions,
                 'admin_contributions': admin_contributions,
-                'audio_distribution': audio_distribution
+                'audio_distribution': audio_distribution,
+                'transcription_metadata': transcription_metadata
             }
             
             logger.info("Successfully retrieved all statistics")

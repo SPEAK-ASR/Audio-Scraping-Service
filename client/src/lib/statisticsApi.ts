@@ -47,6 +47,44 @@ export interface TotalDataSummary {
   average_clip_duration_seconds: number;
 }
 
+export interface SpeakerGenderData {
+  gender: string;
+  count: number;
+}
+
+export interface AudioSuitabilityData {
+  suitable: number;
+  unsuitable: number;
+  unknown: number;
+}
+
+export interface NoiseData {
+  with_noise: number;
+  without_noise: number;
+  unknown: number;
+}
+
+export interface CodeMixingData {
+  code_mixed: number;
+  not_mixed: number;
+  unknown: number;
+}
+
+export interface SpeakerOverlappingData {
+  with_overlap: number;
+  without_overlap: number;
+  unknown: number;
+}
+
+export interface TranscriptionMetadata {
+  total_transcriptions: number;
+  audio_suitability: AudioSuitabilityData;
+  speaker_gender: SpeakerGenderData[];
+  noise: NoiseData;
+  code_mixing: CodeMixingData;
+  speaker_overlapping: SpeakerOverlappingData;
+}
+
 export interface StatisticsResponse {
   success: boolean;
   message: string;
@@ -56,6 +94,7 @@ export interface StatisticsResponse {
   daily_transcriptions: DailyTranscriptionData[];
   admin_contributions: AdminContributionData[];
   audio_distribution: AudioDurationDistribution[];
+  transcription_metadata: TranscriptionMetadata;
 }
 
 export const statisticsApi = {

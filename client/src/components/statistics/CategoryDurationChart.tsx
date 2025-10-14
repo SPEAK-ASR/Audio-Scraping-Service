@@ -39,6 +39,7 @@ export function CategoryDurationChart({ data }: CategoryDurationChartProps) {
             yAxis={[{
               scaleType: 'band',
               data: sortedData.map(item => formatCategoryName(item.category)),
+              width: 120,
               tickLabelStyle: {
                 fontSize: 11,
                 fill: '#90caf9',

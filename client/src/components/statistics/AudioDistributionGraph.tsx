@@ -70,6 +70,7 @@ export function AudioDistributionGraph({ data }: AudioDistributionGraphProps) {
             xAxis={[{ 
               scaleType: 'band', 
               data: sortedData.map(item => item.range),
+              height: 50,
               tickLabelStyle: {
                 angle: -45,
                 textAnchor: 'end',

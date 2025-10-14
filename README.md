@@ -36,10 +36,121 @@ A modern, dark-themed web interface for processing YouTube videos into audio cli
 ### Prerequisites
 - Node.js 18+ 
 - Python 3.8+
+- **FFmpeg** (required for audio processing)
 - Google Cloud credentials configured
 - PostgreSQL database
+- `dos2unix` utility (for fixing line ending issues on Windows/WSL)
 
-### Frontend Setup
+#### Installing FFmpeg
+
+**On Linux/WSL:**
+```bash
+sudo apt-get update
+sudo apt-get install ffmpeg
+```
+
+**On macOS:**
+```bash
+brew install ffmpeg
+```
+
+**On Windows:**
+- Download from [ffmpeg.org](https://ffmpeg.org/download.html)
+- Add FFmpeg to your system PATH
+- Or use WSL (recommended for this project)
+
+### Platform Compatibility
+
+⚠️ **Important:** This application is optimized for **Linux/Unix environments**. 
+
+- **Linux/WSL (Recommended)**: Full compatibility, all features work as expected
+- **macOS**: Should work with minimal issues
+- **Windows (Native)**: May require modifications:
+  - Shell scripts won't work directly (use WSL or Git Bash)
+  - Path separators need adjustment in some configurations
+  - Virtual environment activation command differs (`.venv\Scripts\activate`)
+  
+**For Windows users**, we strongly recommend using **WSL (Windows Subsystem for Linux)** for the best experience.
+
+### Verify Installation
+
+Before proceeding, verify all prerequisites are installed:
+
+```bash
+# Check Node.js
+node --version
+
+# Check npm
+npm --version
+
+# Check Python
+python3 --version
+
+# Check FFmpeg
+ffmpeg -version
+
+# Check dos2unix (if on WSL/Linux)
+dos2unix --version
+```
+
+All commands should return version numbers without errors.
+
+### Quick Start (Recommended)
+
+The easiest way to get started is using the provided shell scripts:
+
+#### Option 1: Install and Start (First Time)
+```bash
+./install.sh
+```
+This script will:
+- Check prerequisites (Node.js, Python 3, npm)
+- Install all client dependencies
+- Create Python virtual environment
+- Install all server dependencies
+- Start both client and server automatically
+
+#### Option 2: Start Services (After Installation)
+```bash
+./start.sh
+```
+Use this when dependencies are already installed. It will:
+- Verify dependencies are installed
+- Start the FastAPI server on port 8000
+- Start the Vite dev server on port 5173
+- Display logs location and service URLs
+
+**Note:** Both services will run concurrently. Press `Ctrl+C` to stop both services.
+
+#### Troubleshooting: "Cannot find start.sh" or Permission Errors
+
+If you encounter errors like:
+- `bash: ./start.sh: No such file or directory`
+- `bash: ./install.sh: /bin/bash^M: bad interpreter`
+- Permission denied errors
+
+This is due to Windows-style line endings (CRLF) instead of Unix-style (LF). Fix it with:
+
+```bash
+# Install dos2unix if not already installed
+sudo apt-get update && sudo apt-get install dos2unix
+
+# Convert the scripts
+dos2unix install.sh
+dos2unix start.sh
+
+# Make scripts executable
+chmod +x install.sh start.sh
+
+# Now run the script
+./install.sh
+```
+
+### Manual Setup (Alternative)
+
+If you prefer to run services separately or need more control:
+
+#### Frontend Setup
 
 1. Navigate to the client directory:
 ```bash
@@ -58,7 +169,7 @@ npm run dev
 
 The frontend will be available at `http://localhost:5173`
 
-### Backend Setup
+#### Backend Setup
 
 1. Navigate to the server directory:
 ```bash
@@ -68,7 +179,8 @@ cd server
 2. Create and activate virtual environment:
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate  # On Windows WSL/Linux
+# On Windows PowerShell: .venv\Scripts\activate
 ```
 
 3. Install dependencies:
@@ -88,6 +200,32 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The API will be available at `http://localhost:8000`
+
+**Note:** When running manually, you'll need to open two separate terminals - one for the frontend and one for the backend.
+
+## Service URLs
+
+When running the application, the following services will be available:
+
+- **Frontend (Client)**: http://localhost:5173
+- **Backend API**: http://localhost:8000
+- **API Documentation**: http://localhost:8000/docs (Swagger UI)
+- **API Redoc**: http://localhost:8000/redoc
+
+## Logs
+
+When using shell scripts, logs are automatically created in the `logs/` directory:
+- `logs/client.log` - Vite development server logs
+- `logs/server.log` - FastAPI server logs
+
+You can monitor logs in real-time:
+```bash
+# Watch client logs
+tail -f logs/client.log
+
+# Watch server logs
+tail -f logs/server.log
+```
 
 ## Usage
 

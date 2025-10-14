@@ -1,8 +1,7 @@
 #!/bin/bash
 
-# Audio Scraping Service - Startup Script
-# This script starts both the client and server concurrently
-# Note: Run install.sh first if you haven't installed dependencies
+# Audio Scraping Service - Installation and Startup Script
+# This script installs dependencies and starts both the client and server
 
 set -e
 
@@ -19,27 +18,71 @@ CLIENT_DIR="$SCRIPT_DIR/client"
 SERVER_DIR="$SCRIPT_DIR/server"
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Audio Scraping Service Startup${NC}"
+echo -e "${BLUE}  Audio Scraping Service Installation${NC}"
 echo -e "${BLUE}========================================${NC}\n"
 
-# Quick checks for required installations
-if [ ! -d "$CLIENT_DIR/node_modules" ]; then
-    echo -e "${RED}Error: Client dependencies not installed${NC}"
-    echo -e "${YELLOW}Please run: ./install.sh${NC}"
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Check prerequisites
+echo -e "${YELLOW}Checking prerequisites...${NC}"
+
+if ! command_exists node; then
+    echo -e "${RED}Error: Node.js is not installed${NC}"
     exit 1
 fi
 
+if ! command_exists python3; then
+    echo -e "${RED}Error: Python 3 is not installed${NC}"
+    exit 1
+fi
+
+if ! command_exists npm; then
+    echo -e "${RED}Error: npm is not installed${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ All prerequisites met${NC}\n"
+
+# Install client dependencies
+echo -e "${YELLOW}Installing client dependencies...${NC}"
+cd "$CLIENT_DIR"
+npm install
+echo -e "${GREEN}✓ Client dependencies installed${NC}\n"
+
+# Create Python virtual environment if it doesn't exist
 if [ ! -d "$SERVER_DIR/.venv" ]; then
-    echo -e "${RED}Error: Server virtual environment not found${NC}"
-    echo -e "${YELLOW}Please run: ./install.sh${NC}"
-    exit 1
+    echo -e "${YELLOW}Creating Python virtual environment...${NC}"
+    cd "$SERVER_DIR"
+    python3 -m venv .venv
+    echo -e "${GREEN}✓ Virtual environment created${NC}\n"
+else
+    echo -e "${GREEN}✓ Virtual environment already exists${NC}\n"
 fi
 
-echo -e "${GREEN}✓ Dependencies verified${NC}\n"
+# Install server dependencies
+echo -e "${YELLOW}Installing server dependencies...${NC}"
+cd "$SERVER_DIR"
+source .venv/bin/activate
+pip install -r requirements.txt
+# Create marker file to indicate successful installation
+mkdir -p .venv
+touch .venv/.requirements_installed
+deactivate
+echo -e "${GREEN}✓ Server dependencies installed${NC}\n"
 
 # Create log directory if it doesn't exist
 LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
+
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}  Installation Complete!${NC}"
+echo -e "${GREEN}========================================${NC}\n"
+
+# Now start the services
+echo -e "${BLUE}Starting services...${NC}\n"
 
 # Function to cleanup background processes on exit
 cleanup() {

@@ -8,8 +8,7 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem,
-  Paper,
+  MenuItem
 } from '@mui/material';
 import { Refresh } from '@mui/icons-material';
 import { statisticsApi, type StatisticsResponse } from '../lib/statisticsApi';
@@ -98,7 +97,7 @@ export function StatisticsPage({ onBack }: StatisticsPageProps) {
   }
 
   return (
-    <Box sx={{ maxWidth: 1400, mx: 'auto', p: 2 }}>
+    <Box sx={{ maxWidth: 1400, mx: 'auto', p: 2, pt: 4 }}>
       {/* Header */}
       <Box sx={{ mb: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
@@ -148,37 +147,19 @@ export function StatisticsPage({ onBack }: StatisticsPageProps) {
       <Box sx={{ display: 'grid', gap: 2, mb: 2 }}>
         {/* Row 1: Two columns */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
-          <TranscriptionStatusChart data={statistics.transcription_status} />
-          <AudioDistributionGraph data={statistics.audio_distribution} />
+          {/* Left Column */}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <TranscriptionStatusChart data={statistics.transcription_status} />
+            <CategoryDurationChart data={statistics.category_durations} />
+            <AdminContributionChart data={statistics.admin_contributions} />
+          </Box>
+          {/* Right Column */}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <AudioDistributionGraph data={statistics.audio_distribution} />
+            <DailyTranscriptionGraph data={statistics.daily_transcriptions} />
+          </Box>
         </Box>
-
-        {/* Row 2: Category Duration */}
-        <CategoryDurationChart data={statistics.category_durations} />
-
-        {/* Row 3: Full width */}
-        <DailyTranscriptionGraph data={statistics.daily_transcriptions} />
-
-        {/* Row 4: Full width */}
-        <AdminContributionChart data={statistics.admin_contributions} />
       </Box>
-
-      {/* Footer info */}
-      <Paper
-        elevation={0}
-        sx={{
-          p: 1.5,
-          mt: 2,
-          backgroundColor: '#f5f5f5',
-          textAlign: 'center',
-        }}
-      >
-        <Typography variant="body2" color="text.secondary">
-          Last updated: {new Date().toLocaleString()}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          All durations are calculated from audio clip padded durations
-        </Typography>
-      </Paper>
     </Box>
   );
 }

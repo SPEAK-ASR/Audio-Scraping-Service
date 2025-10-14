@@ -1,4 +1,4 @@
-import { Card, CardContent, Typography, Box } from '@mui/material';
+import { Typography, Box } from '@mui/material';
 import { TrendingUp } from '@mui/icons-material';
 import { LineChart } from '@mui/x-charts/LineChart';
 import type { DailyTranscriptionData } from '../../lib/statisticsApi';
@@ -24,14 +24,15 @@ export function DailyTranscriptionGraph({ data }: DailyTranscriptionGraphProps) 
   const totalHours = displayData.reduce((sum, d) => sum + d.total_duration_hours, 0);
 
   return (
-    <Card 
-      elevation={2}
+    <Box
       sx={{
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: 'white'
+        color: 'white',
+        borderRadius: 1,
+        boxShadow: 2,
       }}
     >
-      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+      <Box sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
           <Typography variant="h6" fontWeight="bold" color="white">
             Daily Transcription Activity
@@ -112,7 +113,7 @@ export function DailyTranscriptionGraph({ data }: DailyTranscriptionGraphProps) 
             </Typography>
           </Box>
         )}
-      </CardContent>
-    </Card>
+      </Box>
+    </Box>
   );
 }

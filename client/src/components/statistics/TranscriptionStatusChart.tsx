@@ -1,5 +1,6 @@
-import { Card, CardContent, Typography, Box } from '@mui/material';
+import { Typography, Box } from '@mui/material';
 import { CheckCircle, RadioButtonUnchecked } from '@mui/icons-material';
+import { Gauge, gaugeClasses } from '@mui/x-charts/Gauge';
 import type { TranscriptionStatusData } from '../../lib/statisticsApi';
 
 interface TranscriptionStatusChartProps {
@@ -8,17 +9,17 @@ interface TranscriptionStatusChartProps {
 
 export function TranscriptionStatusChart({ data }: TranscriptionStatusChartProps) {
   const transcribedPercentage = data.transcription_rate;
-  const nonTranscribedPercentage = 100 - transcribedPercentage;
 
   return (
-    <Card 
-      elevation={2}
+    <Box
       sx={{
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: 'white'
+        color: 'white',
+        borderRadius: 1,
+        boxShadow: 2,
       }}
     >
-      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+      <Box sx={{ p: 2 }}>
         <Typography variant="h6" gutterBottom fontWeight="bold" color="white" sx={{ mb: 0.5 }}>
           Transcription Status
         </Typography>
@@ -26,50 +27,29 @@ export function TranscriptionStatusChart({ data }: TranscriptionStatusChartProps
           Transcribed vs non-transcribed audio clips
         </Typography>
 
-        {/* Progress bar */}
-        <Box
-          sx={{
-            width: '100%',
-            height: 32,
-            borderRadius: 2,
-            overflow: 'hidden',
-            display: 'flex',
-            mb: 2,
-            border: '1px solid rgba(100, 181, 246, 0.2)',
-          }}
-        >
-          <Box
+        {/* Gauge Chart */}
+        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+          <Gauge
+            width={280}
+            height={200}
+            value={transcribedPercentage}
+            startAngle={-110}
+            endAngle={110}
             sx={{
-              width: `${transcribedPercentage}%`,
-              backgroundColor: '#66bb6a',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'width 0.3s ease',
+              [`& .${gaugeClasses.valueText}`]: {
+                fontSize: 32,
+                fontWeight: 'bold',
+                fill: '#fff',
+              },
+              [`& .${gaugeClasses.valueArc}`]: {
+                fill: '#66bb6a',
+              },
+              [`& .${gaugeClasses.referenceArc}`]: {
+                fill: 'rgba(255, 255, 255, 0.1)',
+              },
             }}
-          >
-            {transcribedPercentage > 15 && (
-              <Typography variant="body2" color="white" fontWeight="bold">
-                {transcribedPercentage.toFixed(1)}%
-              </Typography>
-            )}
-          </Box>
-          <Box
-            sx={{
-              width: `${nonTranscribedPercentage}%`,
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'width 0.3s ease',
-            }}
-          >
-            {nonTranscribedPercentage > 15 && (
-              <Typography variant="body2" sx={{ color: '#b0bec5' }} fontWeight="bold">
-                {nonTranscribedPercentage.toFixed(1)}%
-              </Typography>
-            )}
-          </Box>
+            text={({ value }) => `${value?.toFixed(1) ?? '0'}%`}
+          />
         </Box>
 
         {/* Statistics cards */}
@@ -120,26 +100,7 @@ export function TranscriptionStatusChart({ data }: TranscriptionStatusChartProps
             </Typography>
           </Box>
         </Box>
-
-        {/* Total */}
-        <Box
-          sx={{
-            mt: 1.5,
-            p: 1.5,
-            borderRadius: 2,
-            background: 'linear-gradient(135deg, rgba(100, 181, 246, 0.15) 0%, rgba(63, 81, 181, 0.15) 100%)',
-            border: '1px solid rgba(100, 181, 246, 0.3)',
-            textAlign: 'center',
-          }}
-        >
-          <Typography variant="body2" sx={{ color: '#90caf9', mb: 0.5 }}>
-            Total Audio Clips
-          </Typography>
-          <Typography variant="h4" fontWeight="bold" color="white">
-            {data.total_count.toLocaleString()}
-          </Typography>
-        </Box>
-      </CardContent>
-    </Card>
+      </Box>
+    </Box>
   );
 }

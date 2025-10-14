@@ -1,4 +1,4 @@
-import { Box, Card, CardContent, Typography } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import {
   VideoLibrary,
   AudioFile,
@@ -60,17 +60,25 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
   return (
     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 2 }}>
       {cards.map((card, index) => (
-        <Card
+        <Box
           key={index}
-          elevation={2}
           sx={{
             height: '100%',
             background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
             color: 'white',
             border: `1px solid ${card.borderColor}`,
+            borderRadius: 1,
+            boxShadow: 2,
+            cursor: 'pointer',
+            transition: 'all 0.3s ease-in-out',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              boxShadow: `0 8px 24px ${card.color}40, 0 0 20px ${card.color}30`,
+              border: `1px solid ${card.color}`,
+            },
           }}
         >
-          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+          <Box sx={{ p: 2 }}>
             <Box
               sx={{
                 display: 'flex',
@@ -105,8 +113,8 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
                 {card.subtitle}
               </Typography>
             )}
-          </CardContent>
-        </Card>
+          </Box>
+        </Box>
       ))}
     </Box>
   );

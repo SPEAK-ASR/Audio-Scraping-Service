@@ -1,4 +1,4 @@
-import { Card, CardContent, Typography, Box } from '@mui/material';
+import { Typography, Box } from '@mui/material';
 import { BarChart } from '@mui/x-charts/BarChart';
 import type { CategoryDurationData } from '../../lib/statisticsApi';
 
@@ -17,14 +17,15 @@ export function CategoryDurationChart({ data }: CategoryDurationChartProps) {
   };
 
   return (
-    <Card 
-      elevation={2}
+    <Box
       sx={{
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: 'white'
+        color: 'white',
+        borderRadius: 1,
+        boxShadow: 2,
       }}
     >
-      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+      <Box sx={{ p: 2 }}>
         <Typography variant="h6" gutterBottom fontWeight="bold" color="white" sx={{ mb: 0.5 }}>
           Duration by Category
         </Typography>
@@ -73,7 +74,7 @@ export function CategoryDurationChart({ data }: CategoryDurationChartProps) {
             </Typography>
           </Box>
         )}
-      </CardContent>
-    </Card>
+      </Box>
+    </Box>
   );
 }

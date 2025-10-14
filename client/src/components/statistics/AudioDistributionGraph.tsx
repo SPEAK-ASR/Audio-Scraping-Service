@@ -1,4 +1,4 @@
-import { Card, CardContent, Typography, Box } from '@mui/material';
+import { Typography, Box } from '@mui/material';
 import { GraphicEq } from '@mui/icons-material';
 import { BarChart } from '@mui/x-charts/BarChart';
 
@@ -20,14 +20,15 @@ export function AudioDistributionGraph({ data }: AudioDistributionGraphProps) {
   const totalHours = sortedData.reduce((sum, d) => sum + d.total_duration_hours, 0);
 
   return (
-    <Card 
-      elevation={2}
+    <Box
       sx={{
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: 'white'
+        color: 'white',
+        borderRadius: 1,
+        boxShadow: 2,
       }}
     >
-      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+      <Box sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
           <GraphicEq sx={{ mr: 1, color: '#64b5f6', fontSize: 22 }} />
           <Typography variant="h6" fontWeight="bold" color="white">
@@ -105,7 +106,7 @@ export function AudioDistributionGraph({ data }: AudioDistributionGraphProps) {
             </Typography>
           </Box>
         )}
-      </CardContent>
-    </Card>
+      </Box>
+    </Box>
   );
 }

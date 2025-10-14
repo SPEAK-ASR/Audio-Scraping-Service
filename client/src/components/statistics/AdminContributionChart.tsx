@@ -1,4 +1,4 @@
-import { Card, CardContent, Typography, Box } from '@mui/material';
+import { Typography, Box } from '@mui/material';
 import { People } from '@mui/icons-material';
 import { BarChart } from '@mui/x-charts/BarChart';
 import type { AdminContributionData } from '../../lib/statisticsApi';
@@ -21,14 +21,15 @@ export function AdminContributionChart({ data }: AdminContributionChartProps) {
   const totalContributions = sortedData.reduce((sum, d) => sum + d.transcription_count, 0);
 
   return (
-    <Card 
-      elevation={2}
+    <Box
       sx={{
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: 'white'
+        color: 'white',
+        borderRadius: 1,
+        boxShadow: 2,
       }}
     >
-      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+      <Box sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
           <People sx={{ mr: 1, color: '#64b5f6', fontSize: 22 }} />
           <Typography variant="h6" fontWeight="bold" color="white">
@@ -106,7 +107,7 @@ export function AdminContributionChart({ data }: AdminContributionChartProps) {
             </Typography>
           </Box>
         )}
-      </CardContent>
-    </Card>
+      </Box>
+    </Box>
   );
 }

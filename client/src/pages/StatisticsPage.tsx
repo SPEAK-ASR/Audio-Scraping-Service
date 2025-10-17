@@ -25,7 +25,7 @@ export function StatisticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(30);
-  const [dailyDays, setDailyDays] = useState<7 | 30>(7);
+  const [dailyDays, setDailyDays] = useState<7 | 30>(30);
 
   const fetchStatistics = async (selectedDays: number) => {
     setLoading(true);

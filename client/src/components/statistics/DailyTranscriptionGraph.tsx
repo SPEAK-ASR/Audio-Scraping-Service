@@ -1,18 +1,17 @@
-import { Typography, Box } from '@mui/material';
+import { Typography, Box, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { TrendingUp } from '@mui/icons-material';
 import { LineChart } from '@mui/x-charts/LineChart';
 import type { DailyTranscriptionData } from '../../lib/statisticsApi';
 
 interface DailyTranscriptionGraphProps {
   data: DailyTranscriptionData[];
+  days: number;
+  onDaysChange: (days: 7 | 30) => void;
 }
 
-export function DailyTranscriptionGraph({ data }: DailyTranscriptionGraphProps) {
-  const sortedData = [...data].sort((a, b) => 
-    new Date(a.date).getTime() - new Date(b.date).getTime()
-  );
-
-  const displayData = sortedData.slice(-30);
+export function DailyTranscriptionGraph({ data, days, onDaysChange }: DailyTranscriptionGraphProps) {
+  // Data is already sorted and filtered by the backend to match the requested days
+  const displayData = data;
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -39,9 +38,40 @@ export function DailyTranscriptionGraph({ data }: DailyTranscriptionGraphProps) 
           </Typography>
           <TrendingUp sx={{ color: '#64b5f6', fontSize: 22 }} />
         </Box>
-        <Typography variant="body2" sx={{ mb: 2, color: '#b0bec5' }}>
-          Transcription trends over the last {displayData.length} days
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="body2" sx={{ color: '#b0bec5' }}>
+            Transcription trends over the last {displayData.length} days
+          </Typography>
+          <ToggleButtonGroup
+            value={days}
+            exclusive
+            onChange={(_, newValue) => {
+              if (newValue !== null) {
+                onDaysChange(newValue);
+              }
+            }}
+            size="small"
+            sx={{
+              '& .MuiToggleButton-root': {
+                color: '#90caf9',
+                borderColor: 'rgba(100, 181, 246, 0.3)',
+                '&.Mui-selected': {
+                  backgroundColor: 'rgba(100, 181, 246, 0.25)',
+                  color: '#64b5f6',
+                  '&:hover': {
+                    backgroundColor: 'rgba(100, 181, 246, 0.35)',
+                  },
+                },
+                '&:hover': {
+                  backgroundColor: 'rgba(100, 181, 246, 0.15)',
+                },
+              },
+            }}
+          >
+            <ToggleButton value={7}>7 days</ToggleButton>
+            <ToggleButton value={30}>30 days</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
 
         <Box
           sx={{

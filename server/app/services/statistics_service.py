@@ -133,6 +133,7 @@ class StatisticsService:
     async def get_daily_transcriptions(db: AsyncSession, days: int = 30) -> List[Dict[str, Any]]:
         """
         Get daily transcription statistics for the last N days.
+        Returns data for ALL days in the range, with zero counts for days without transcriptions.
         
         Args:
             db: Database session
@@ -161,23 +162,41 @@ class StatisticsService:
                     )
                 )
                 .group_by(cast(Transcription.created_at, Date))
-                .order_by(cast(Transcription.created_at, Date).desc())
+                .order_by(cast(Transcription.created_at, Date).asc())
             )
             
             result = await db.execute(query)
             rows = result.all()
             
-            daily_data = []
+            # Create a dictionary of dates with data
+            data_by_date = {}
             for row in rows:
                 total_seconds = float(row.total_duration or 0)
-                daily_data.append({
-                    'date': row.date,
+                data_by_date[row.date] = {
+                    'date': row.date.isoformat(),
                     'transcription_count': row.transcription_count,
                     'audio_count': row.audio_count,
                     'total_duration_hours': total_seconds / 3600
-                })
+                }
             
-            logger.info(f"Retrieved daily transcriptions for {len(daily_data)} days")
+            # Fill in missing dates with zeros
+            daily_data = []
+            current_date = datetime.now().date()
+            
+            for i in range(days):
+                check_date = current_date - timedelta(days=days - 1 - i)
+                
+                if check_date in data_by_date:
+                    daily_data.append(data_by_date[check_date])
+                else:
+                    daily_data.append({
+                        'date': check_date.isoformat(),
+                        'transcription_count': 0,
+                        'audio_count': 0,
+                        'total_duration_hours': 0.0
+                    })
+            
+            logger.info(f"Retrieved daily transcriptions for {len(daily_data)} days (including {len(data_by_date)} days with data)")
             return daily_data
             
         except Exception as e:
@@ -239,18 +258,15 @@ class StatisticsService:
     async def get_audio_distribution(db: AsyncSession) -> List[Dict[str, Any]]:
         """
         Get distribution of audio clips by duration ranges.
-        Uses fine-grained 0.5-second intervals for the 4-10s range.
+        Uses fine-grained 0.5-second intervals from 0-11.5s.
         
         Returns:
             List of dictionaries containing duration range statistics
         """
         try:
-            # Define fine-grained duration ranges (0.5s intervals for 4-10s range)
+            # Define fine-grained duration ranges (0.5s intervals)
             ranges = [
-                (0, 4, '0-4s'),
-                (4.0, 4.5, '4.0-4.5s'),
-                (4.5, 5.0, '4.5-5.0s'),
-                (5.0, 5.5, '5.0-5.5s'),
+                (0, 5.5, '0-5.5s'),
                 (5.5, 6.0, '5.5-6.0s'),
                 (6.0, 6.5, '6.0-6.5s'),
                 (6.5, 7.0, '6.5-7.0s'),
@@ -260,7 +276,10 @@ class StatisticsService:
                 (8.5, 9.0, '8.5-9.0s'),
                 (9.0, 9.5, '9.0-9.5s'),
                 (9.5, 10.0, '9.5-10.0s'),
-                (10, float('inf'), '10s+')
+                (10.0, 10.5, '10.0-10.5s'),
+                (10.5, 11.0, '10.5-11.0s'),
+                (11.0, 11.5, '11.0-11.5s'),
+                (11.5, float('inf'), '11.5s+')
             ]
             
             # Get total count for percentage calculation

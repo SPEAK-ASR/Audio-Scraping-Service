@@ -20,15 +20,12 @@ import { AdminContributionChart } from '../components/statistics/AdminContributi
 import { AudioDistributionGraph } from '../components/statistics/AudioDistributionGraph';
 import { TranscriptionMetadataChart } from '../components/statistics/TranscriptionMetadataChart';
 
-interface StatisticsPageProps {
-  onBack?: () => void;
-}
-
-export function StatisticsPage({ onBack }: StatisticsPageProps) {
+export function StatisticsPage() {
   const [statistics, setStatistics] = useState<StatisticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(30);
+  const [dailyDays, setDailyDays] = useState<7 | 30>(7);
 
   const fetchStatistics = async (selectedDays: number) => {
     setLoading(true);
@@ -44,6 +41,15 @@ export function StatisticsPage({ onBack }: StatisticsPageProps) {
     }
   };
 
+  const fetchDailyStatistics = async (selectedDays: 7 | 30) => {
+    try {
+      const data = await statisticsApi.getDailyTranscriptions(selectedDays);
+      setStatistics(prev => prev ? { ...prev, daily_transcriptions: data.data } : null);
+    } catch (err) {
+      console.error('Error fetching daily statistics:', err);
+    }
+  };
+
   useEffect(() => {
     fetchStatistics(days);
   }, [days]);
@@ -54,6 +60,11 @@ export function StatisticsPage({ onBack }: StatisticsPageProps) {
 
   const handleDaysChange = (newDays: number) => {
     setDays(newDays);
+  };
+
+  const handleDailyDaysChange = (newDays: 7 | 30) => {
+    setDailyDays(newDays);
+    fetchDailyStatistics(newDays);
   };
 
   if (loading) {
@@ -160,7 +171,11 @@ export function StatisticsPage({ onBack }: StatisticsPageProps) {
           {/* Right Column */}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <AudioDistributionGraph data={statistics.audio_distribution} />
-            <DailyTranscriptionGraph data={statistics.daily_transcriptions} />
+            <DailyTranscriptionGraph 
+              data={statistics.daily_transcriptions} 
+              days={dailyDays}
+              onDaysChange={handleDailyDaysChange}
+            />
             {/* <TranscriptionMetadataChart data={statistics.transcription_metadata} /> */}
           </Box>
         </Box>

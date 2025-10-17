@@ -1,13 +1,19 @@
 import { Fab, Tooltip, Zoom } from '@mui/material';
 import { BarChart, Home } from '@mui/icons-material';
+import { useNavigate, useLocation } from 'react-router-dom';
 
-interface StatisticsFloatingButtonProps {
-  currentPage: 'home' | 'statistics';
-  onNavigate: (page: 'home' | 'statistics') => void;
-}
-
-export function StatisticsFloatingButton({ currentPage, onNavigate }: StatisticsFloatingButtonProps) {
-  const isOnStatisticsPage = currentPage === 'statistics';
+export function StatisticsFloatingButton() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isOnStatisticsPage = location.pathname === '/statistics';
+  
+  const handleClick = () => {
+    if (isOnStatisticsPage) {
+      navigate('/');
+    } else {
+      navigate('/statistics');
+    }
+  };
   
   return (
     <Zoom in={true}>
@@ -19,7 +25,7 @@ export function StatisticsFloatingButton({ currentPage, onNavigate }: Statistics
         <Fab
           color="primary"
           aria-label={isOnStatisticsPage ? "back to home" : "view statistics"}
-          onClick={() => onNavigate(isOnStatisticsPage ? 'home' : 'statistics')}
+          onClick={handleClick}
           sx={{
             position: 'fixed',
             bottom: 32,

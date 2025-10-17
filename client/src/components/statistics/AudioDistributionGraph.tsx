@@ -36,7 +36,7 @@ export function AudioDistributionGraph({ data }: AudioDistributionGraphProps) {
           </Typography>
         </Box>
         <Typography variant="body2" sx={{ mb: 2, color: '#b0bec5' }}>
-          Distribution of audio clips across 0.5-second intervals (4.0s - 10.0s range)
+          Distribution of audio clips across duration intervals (0s - 11.5s+)
         </Typography>
 
         <Box

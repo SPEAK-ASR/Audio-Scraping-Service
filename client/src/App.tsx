@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import { Typography, Box } from '@mui/material';
 import { StatisticsFloatingButton } from './components/StatisticsFloatingButton';
 import { YoutubeUrlInput } from './components/YoutubeUrlInput';
@@ -12,10 +13,8 @@ import { StatisticsPage } from './pages/StatisticsPage';
 import type { ClipData, TranscribedClip, VideoMetadata } from './lib/api';
 
 export type ProcessingStep = 'input' | 'processing' | 'clips' | 'transcription' | 'storage' | 'complete';
-export type Page = 'home' | 'statistics';
 
-function App() {
-  const [currentPage, setCurrentPage] = useState<Page>('home');
+function HomePage() {
   const [currentStep, setCurrentStep] = useState<ProcessingStep>('input');
   const [videoId, setVideoId] = useState<string>('');
   const [domain, setDomain] = useState<string>('');
@@ -93,25 +92,9 @@ function App() {
     setProcessingError(errorMessage);
   };
 
-  const handleNavigate = (page: Page) => {
-    setCurrentPage(page);
-  };
-
-  // Statistics Page
-  if (currentPage === 'statistics') {
-    return (
-      <Box sx={{ minHeight: '100vh' }}>
-        <StatisticsFloatingButton currentPage={currentPage} onNavigate={handleNavigate} />
-        <StatisticsPage onBack={() => setCurrentPage('home')} />
-        <Footer />
-      </Box>
-    );
-  }
-
-  // Home Page (Audio Processing)
   return (
     <Box sx={{ minHeight: '100vh' }}>
-      <StatisticsFloatingButton currentPage={currentPage} onNavigate={handleNavigate} />
+      <StatisticsFloatingButton />
       <Box sx={{ p: 2 }}>
         <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
           <Box sx={{ textAlign: 'center', mb: 4, mt: 1}}>
@@ -214,6 +197,25 @@ function App() {
         </Box>
       </Box>
     </Box>
+  );
+}
+
+function StatisticsPageWrapper() {
+  return (
+    <Box sx={{ minHeight: '100vh' }}>
+      <StatisticsFloatingButton />
+      <StatisticsPage />
+      <Footer />
+    </Box>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/statistics" element={<StatisticsPageWrapper />} />
+    </Routes>
   );
 }
 

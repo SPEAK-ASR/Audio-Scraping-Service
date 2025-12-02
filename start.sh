@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Audio Scraping Service - Startup Script
-# This script starts both the client and server concurrently
+# Audio Scraping Service - Backend Startup Script
+# This script starts the FastAPI development server
 # Note: Run install.sh first if you haven't installed dependencies
 
 set -e
@@ -15,38 +15,31 @@ NC='\033[0m' # No Color
 
 # Get the directory where the script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLIENT_DIR="$SCRIPT_DIR/client"
-SERVER_DIR="$SCRIPT_DIR/server"
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Audio Scraping Service Startup${NC}"
+echo -e "${BLUE}  Audio Scraping Service - Backend${NC}"
 echo -e "${BLUE}========================================${NC}\n"
 
 # Quick checks for required installations
-if [ ! -d "$CLIENT_DIR/node_modules" ]; then
-    echo -e "${RED}Error: Client dependencies not installed${NC}"
+if [ ! -d "$SCRIPT_DIR/.venv" ]; then
+    echo -e "${RED}Error: Virtual environment not found${NC}"
     echo -e "${YELLOW}Please run: ./install.sh${NC}"
     exit 1
 fi
 
-if [ ! -d "$SERVER_DIR/.venv" ]; then
-    echo -e "${RED}Error: Server virtual environment not found${NC}"
-    echo -e "${YELLOW}Please run: ./install.sh${NC}"
-    exit 1
+if [ ! -f "$SCRIPT_DIR/.env" ]; then
+    echo -e "${YELLOW}⚠️  Warning: .env file not found${NC}"
+    echo -e "${YELLOW}   Server will use default settings${NC}\n"
 fi
 
 echo -e "${GREEN}✓ Dependencies verified${NC}\n"
 
-# Create log directory if it doesn't exist
-LOG_DIR="$SCRIPT_DIR/logs"
-mkdir -p "$LOG_DIR"
-
-# Function to cleanup background processes on exit
+# Function to cleanup background process on exit
 cleanup() {
-    echo -e "\n${YELLOW}Shutting down services...${NC}"
-    kill $CLIENT_PID $SERVER_PID 2>/dev/null
-    wait $CLIENT_PID $SERVER_PID 2>/dev/null
-    echo -e "${GREEN}Services stopped${NC}"
+    echo -e "\n${YELLOW}Shutting down server...${NC}"
+    kill $SERVER_PID 2>/dev/null
+    wait $SERVER_PID 2>/dev/null
+    echo -e "${GREEN}Server stopped${NC}"
     exit 0
 }
 
@@ -54,31 +47,29 @@ trap cleanup SIGINT SIGTERM
 
 # Start the server
 echo -e "${BLUE}Starting FastAPI server...${NC}"
-cd "$SERVER_DIR"
+cd "$SCRIPT_DIR"
 source .venv/bin/activate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 > "$LOG_DIR/server.log" 2>&1 &
+
+# Check if running in production mode
+if [ "$1" = "--prod" ]; then
+    echo -e "${YELLOW}Running in production mode${NC}"
+    uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+else
+    echo -e "${YELLOW}Running in development mode (use --prod for production)${NC}"
+    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
+fi
+
 SERVER_PID=$!
 deactivate
+
 echo -e "${GREEN}✓ Server started (PID: $SERVER_PID)${NC}"
-echo -e "  Server running at: ${BLUE}http://localhost:8000${NC}"
-echo -e "  Server logs: ${BLUE}$LOG_DIR/server.log${NC}\n"
-
-# Wait a bit for the server to start
-sleep 2
-
-# Start the client
-echo -e "${BLUE}Starting Vite development server...${NC}"
-cd "$CLIENT_DIR"
-npm run dev > "$LOG_DIR/client.log" 2>&1 &
-CLIENT_PID=$!
-echo -e "${GREEN}✓ Client started (PID: $CLIENT_PID)${NC}"
-echo -e "  Client running at: ${BLUE}http://localhost:5173${NC}"
-echo -e "  Client logs: ${BLUE}$LOG_DIR/client.log${NC}\n"
+echo -e "  API running at: ${BLUE}http://localhost:8000${NC}"
+echo -e "  API docs at: ${BLUE}http://localhost:8000/docs${NC}\n"
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  Both services are now running!${NC}"
+echo -e "${GREEN}  Backend API is now running!${NC}"
 echo -e "${GREEN}========================================${NC}"
-echo -e "\n${YELLOW}Press Ctrl+C to stop both services${NC}\n"
+echo -e "\n${YELLOW}Press Ctrl+C to stop the server${NC}\n"
 
-# Wait for both processes
-wait $CLIENT_PID $SERVER_PID
+# Wait for the process
+wait $SERVER_PID

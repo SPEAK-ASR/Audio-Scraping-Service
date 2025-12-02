@@ -41,7 +41,15 @@ class Settings(BaseSettings):
     MAX_CLIP_DURATION: float = 10.0  # Maximum clip duration in seconds
     
     # CORS settings
-    ALLOWED_HOSTS: List[str] = ["*"]
+    ALLOWED_HOSTS: List[str] = ["*"]  # Deprecated, use ALLOWED_ORIGINS
+    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000")
+    
+    @property
+    def get_allowed_origins(self) -> List[str]:
+        """Parse ALLOWED_ORIGINS string into list of origins."""
+        if self.ALLOWED_ORIGINS == "*":
+            return ["*"]
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
     class Config:
         """Pydantic configuration class."""

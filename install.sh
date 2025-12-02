@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Audio Scraping Service - Installation and Startup Script
-# This script installs dependencies and starts both the client and server
+# Audio Scraping Service - Backend Installation Script
+# This script installs all dependencies for the backend API service
 
 set -e
 
@@ -14,11 +14,10 @@ NC='\033[0m' # No Color
 
 # Get the directory where the script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLIENT_DIR="$SCRIPT_DIR/client"
-SERVER_DIR="$SCRIPT_DIR/server"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Audio Scraping Service Installation${NC}"
+echo -e "${BLUE}  (Backend API)${NC}"
 echo -e "${BLUE}========================================${NC}\n"
 
 # Function to check if a command exists
@@ -29,33 +28,26 @@ command_exists() {
 # Check prerequisites
 echo -e "${YELLOW}Checking prerequisites...${NC}"
 
-if ! command_exists node; then
-    echo -e "${RED}Error: Node.js is not installed${NC}"
-    exit 1
-fi
-
 if ! command_exists python3; then
     echo -e "${RED}Error: Python 3 is not installed${NC}"
+    echo -e "${YELLOW}Please install Python 3.8 or higher${NC}"
     exit 1
 fi
 
-if ! command_exists npm; then
-    echo -e "${RED}Error: npm is not installed${NC}"
+PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
+echo -e "${GREEN}✓ Python $PYTHON_VERSION detected${NC}"
+
+if ! command_exists pip3; then
+    echo -e "${RED}Error: pip is not installed${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✓ All prerequisites met${NC}\n"
-
-# Install client dependencies
-echo -e "${YELLOW}Installing client dependencies...${NC}"
-cd "$CLIENT_DIR"
-npm install
-echo -e "${GREEN}✓ Client dependencies installed${NC}\n"
+echo -e "${GREEN}✓ pip detected${NC}\n"
 
 # Create Python virtual environment if it doesn't exist
-if [ ! -d "$SERVER_DIR/.venv" ]; then
+if [ ! -d "$SCRIPT_DIR/.venv" ]; then
     echo -e "${YELLOW}Creating Python virtual environment...${NC}"
-    cd "$SERVER_DIR"
+    cd "$SCRIPT_DIR"
     python3 -m venv .venv
     echo -e "${GREEN}✓ Virtual environment created${NC}\n"
 else
@@ -64,64 +56,33 @@ fi
 
 # Install server dependencies
 echo -e "${YELLOW}Installing server dependencies...${NC}"
-cd "$SERVER_DIR"
+cd "$SCRIPT_DIR"
 source .venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
-# Create marker file to indicate successful installation
-mkdir -p .venv
-touch .venv/.requirements_installed
 deactivate
 echo -e "${GREEN}✓ Server dependencies installed${NC}\n"
 
-# Create log directory if it doesn't exist
-LOG_DIR="$SCRIPT_DIR/logs"
-mkdir -p "$LOG_DIR"
+# Create necessary directories
+echo -e "${YELLOW}Creating required directories...${NC}"
+mkdir -p "$SCRIPT_DIR/output/completed"
+echo -e "${GREEN}✓ Directories created${NC}\n"
+
+# Check for .env file
+if [ ! -f "$SCRIPT_DIR/.env" ]; then
+    echo -e "${YELLOW}⚠️  Warning: .env file not found${NC}"
+    echo -e "${YELLOW}   Please create a .env file with required configuration:${NC}"
+    echo -e "   - DATABASE_URL"
+    echo -e "   - GCS_BUCKET_NAME"
+    echo -e "   - SERVICE_ACCOUNT_B64 (optional)"
+    echo -e "   - ALLOWED_ORIGINS (optional, defaults to *)${NC}\n"
+fi
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  Installation Complete!${NC}"
 echo -e "${GREEN}========================================${NC}\n"
-
-# Now start the services
-echo -e "${BLUE}Starting services...${NC}\n"
-
-# Function to cleanup background processes on exit
-cleanup() {
-    echo -e "\n${YELLOW}Shutting down services...${NC}"
-    kill $CLIENT_PID $SERVER_PID 2>/dev/null
-    wait $CLIENT_PID $SERVER_PID 2>/dev/null
-    echo -e "${GREEN}Services stopped${NC}"
-    exit 0
-}
-
-trap cleanup SIGINT SIGTERM
-
-# Start the server
-echo -e "${BLUE}Starting FastAPI server...${NC}"
-cd "$SERVER_DIR"
-source .venv/bin/activate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 > "$LOG_DIR/server.log" 2>&1 &
-SERVER_PID=$!
-deactivate
-echo -e "${GREEN}✓ Server started (PID: $SERVER_PID)${NC}"
-echo -e "  Server running at: ${BLUE}http://localhost:8000${NC}"
-echo -e "  Server logs: ${BLUE}$LOG_DIR/server.log${NC}\n"
-
-# Wait a bit for the server to start
-sleep 2
-
-# Start the client
-echo -e "${BLUE}Starting Vite development server...${NC}"
-cd "$CLIENT_DIR"
-npm run dev > "$LOG_DIR/client.log" 2>&1 &
-CLIENT_PID=$!
-echo -e "${GREEN}✓ Client started (PID: $CLIENT_PID)${NC}"
-echo -e "  Client running at: ${BLUE}http://localhost:5173${NC}"
-echo -e "  Client logs: ${BLUE}$LOG_DIR/client.log${NC}\n"
-
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  Both services are now running!${NC}"
-echo -e "${GREEN}========================================${NC}"
-echo -e "\n${YELLOW}Press Ctrl+C to stop both services${NC}\n"
-
-# Wait for both processes
-wait $CLIENT_PID $SERVER_PID
+echo -e "Next steps:"
+echo -e "  1. Configure .env file"
+echo -e "  2. Set up PostgreSQL database"
+echo -e "  3. Configure Google Cloud Storage credentials"
+echo -e "  4. Run './start.sh' to start the API server\n"

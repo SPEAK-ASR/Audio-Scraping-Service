@@ -22,6 +22,9 @@ import webrtcvad
 from app.utils import get_logger
 from app.core.config import settings
 
+# Filter
+from df.enhance import enhance, init_df, load_audio, save_audio
+
 logger = get_logger(__name__)
 
 
@@ -40,6 +43,7 @@ class YouTubeProcessor:
     def __init__(self):
         self.temp_files = []
         self._check_dependencies()
+        self.model, self.df_state, _ = init_df()
     
     def _check_dependencies(self) -> None:
         """Check if required dependencies (FFmpeg) are available."""
@@ -331,6 +335,11 @@ class YouTubeProcessor:
         try:
             # Download audio
             metadata = await self.download_audio(url, temp_audio_path)
+
+            # Initialize DeepFilterNet
+            audio, _ = load_audio(temp_audio_path, sr=self.df_state.sr())
+            enhanced_audio = enhance(self.model, self.df_state, audio)
+            save_audio(temp_audio_path, enhanced_audio, self.df_state.sr())
             
             # Split with VAD
             clips_data = self.split_with_vad(

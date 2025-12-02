@@ -25,8 +25,3 @@ python-dotenv==1.0.0
 
 # Utilities
 tqdm==4.66.1
-
-# Filter
-torch==1.13.1
-torchaudio==0.13.1
-deepfilternet

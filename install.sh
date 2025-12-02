@@ -40,9 +40,18 @@ fi
 # Install dependencies
 source .venv/bin/activate
 pip install --upgrade pip
+
+# Install PyTorch with CPU support first
+echo -e "${YELLOW}Installing PyTorch (CPU version) and deepfilternet...${NC}"
+pip install torch==1.13.1+cpu torchaudio==0.13.1+cpu -f https://download.pytorch.org/whl/torch_stable.html
+pip install deepfilternet
+echo -e "${GREEN}✓ PyTorch and deepfilternet installed${NC}"
+
+# Install remaining dependencies
+echo -e "${YELLOW}Installing remaining dependencies...${NC}"
 pip install -r requirements.txt
 deactivate
-echo -e "${GREEN}✓ Dependencies installed${NC}"
+echo -e "${GREEN}✓ All dependencies installed${NC}"
 
 mkdir -p "$SCRIPT_DIR/output/completed"
 echo -e "${GREEN}✓ Directories created${NC}"

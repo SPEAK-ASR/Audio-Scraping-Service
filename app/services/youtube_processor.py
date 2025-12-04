@@ -331,32 +331,30 @@ class YouTubeProcessor:
         # Create temporary file for downloaded audio
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
             temp_audio_path = temp_file.name
-        
-        try:
-            # Download audio
-            metadata = await self.download_audio(url, temp_audio_path)
+            try:
+                # Download audio
+                metadata = await self.download_audio(url, temp_audio_path)
 
-            # Initialize DeepFilterNet
-            audio, _ = load_audio(temp_audio_path, sr=self.df_state.sr())
-            enhanced_audio = enhance(self.model, self.df_state, audio)
-            save_audio(temp_audio_path, enhanced_audio, self.df_state.sr())
+                # Enhance audio with DeepFilterNet (chunked for memory efficiency)
+                logger.info("Starting audio enhancement with DeepFilterNet")
+                self.enhance_audio_chunked(temp_audio_path, temp_audio_path, chunk_duration_seconds=600)
+                
+                # Split with VAD
+                clips_data = self.split_with_vad(
+                    input_file=temp_audio_path,
+                    output_dir=output_dir,
+                    video_id=video_id,
+                    aggressiveness=vad_aggressiveness,
+                    start_padding=start_padding,
+                    end_padding=end_padding
+                )
+                
+                return metadata, clips_data
             
-            # Split with VAD
-            clips_data = self.split_with_vad(
-                input_file=temp_audio_path,
-                output_dir=output_dir,
-                video_id=video_id,
-                aggressiveness=vad_aggressiveness,
-                start_padding=start_padding,
-                end_padding=end_padding
-            )
-            
-            return metadata, clips_data
-            
-        finally:
-            # Clean up temporary file
-            if os.path.exists(temp_audio_path):
-                os.remove(temp_audio_path)
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_audio_path):
+                    os.remove(temp_audio_path)
     
     async def process_video_with_database(
         self, 
@@ -438,3 +436,63 @@ class YouTubeProcessor:
         if not time_obj:
             return 0.0
         return time_obj.hour * 3600 + time_obj.minute * 60 + time_obj.second + time_obj.microsecond / 1000000
+
+    def enhance_audio_chunked(self, input_path: str, output_path: str, chunk_duration_seconds: int = 600):
+        """
+        Enhance audio using DeepFilterNet in chunks to handle long audio files.
+        
+        Args:
+            input_path: Path to input audio file
+            output_path: Path to save enhanced audio
+            chunk_duration_seconds: Duration of each chunk in seconds (default: 600s)
+        """
+        import torch
+        import numpy as np
+        logger.info(f"Enhancing audio with DeepFilterNet (chunked processing)")
+        
+        # Load full audio
+        audio, audio_meta = load_audio(input_path, sr=self.df_state.sr())
+        sr = self.df_state.sr()  # Use the model's sample rate
+        logger.info(f"Audio loaded: {audio.shape[1]} samples, {audio.shape[1]/sr:.2f} seconds")
+        
+        # Calculate chunk size in samples
+        chunk_size = int(chunk_duration_seconds * sr)
+        total_samples = audio.shape[1]
+        
+        # Process in chunks
+        enhanced_chunks = []
+        num_chunks = (total_samples + chunk_size - 1) // chunk_size  # Ceiling division
+        
+        logger.info(f"Processing audio in {num_chunks} chunks of {chunk_duration_seconds}s each")
+        
+        for i in range(num_chunks):
+            start_idx = i * chunk_size
+            end_idx = min(start_idx + chunk_size, total_samples)
+            
+            # Extract chunk
+            chunk = audio[:, start_idx:end_idx]
+            
+            logger.info(f"Enhancing chunk {i+1}/{num_chunks} ({start_idx/sr:.1f}s - {end_idx/sr:.1f}s)")
+            
+            try:
+                # Enhance chunk
+                enhanced_chunk = enhance(self.model, self.df_state, chunk)
+                enhanced_chunks.append(enhanced_chunk)
+                
+                # Clear GPU cache if using CUDA
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    
+            except Exception as e:
+                logger.error(f"Error enhancing chunk {i+1}: {str(e)}")
+                # Use original chunk if enhancement fails
+                enhanced_chunks.append(chunk)
+        
+        # Concatenate all enhanced chunks
+        logger.info("Concatenating enhanced chunks")
+        enhanced_audio = torch.cat(enhanced_chunks, dim=1)
+        
+        # Save enhanced audio
+        logger.info(f"Saving enhanced audio to {output_path}")
+        save_audio(output_path, enhanced_audio, sr)
+        logger.info("Audio enhancement completed successfully")

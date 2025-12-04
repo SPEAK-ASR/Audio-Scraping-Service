@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     
     # CORS settings
     ALLOWED_HOSTS: List[str] = ["*"]  # Deprecated, use ALLOWED_ORIGINS
-    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000")
+    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "*")
     
     @property
     def get_allowed_origins(self) -> List[str]:

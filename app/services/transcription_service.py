@@ -9,7 +9,6 @@ from typing import List, Optional
 from pathlib import Path
 
 from google.cloud import speech
-from pydub import AudioSegment
 
 from app.core.gcp_auth import gcp_auth_manager
 from app.utils import get_logger
@@ -29,21 +28,6 @@ class TranscriptionService:
             # Fall back to default credentials
             self.client = speech.SpeechClient()
     
-    def convert_audio_to_sample_rate(self, input_audio_path: str, 
-                                   output_audio_path: str, 
-                                   target_sample_rate: int = 16000) -> None:
-        """Convert audio file to target sample rate."""
-        # Ensure output directory exists
-        output_dir = os.path.dirname(output_audio_path)
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        
-        # Load and convert audio
-        audio = AudioSegment.from_file(input_audio_path)
-        audio = audio.set_frame_rate(target_sample_rate)
-        audio.export(output_audio_path, format="wav")
-        
-        logger.info(f"Audio converted to {target_sample_rate} Hz: {output_audio_path}")
     
     async def transcribe_audio(self, audio_file_path: str) -> Optional[str]:
         """

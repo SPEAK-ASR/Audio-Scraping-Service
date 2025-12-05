@@ -43,7 +43,7 @@ pip install --upgrade pip
 
 # Install PyTorch with CPU support first
 echo -e "${YELLOW}Installing PyTorch (CPU version) and deepfilternet...${NC}"
-pip install torch==1.13.1+cpu torchaudio==0.13.1+cpu -f https://download.pytorch.org/whl/torch_stable.html
+pip install torch==2.0.1+cpu torchaudio==2.0.2+cpu --index-url https://download.pytorch.org/whl/cpu
 pip install deepfilternet
 echo -e "${GREEN}✓ PyTorch and deepfilternet installed${NC}"
 

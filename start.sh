@@ -22,15 +22,34 @@ python -V  # Should show 3.10.x
 
 echo -e "${GREEN}✓ Using Python: $(python -V)${NC}"
 
+# Setup cleanup function and trap BEFORE starting server
+CLEANUP_DONE=0
+cleanup() {
+    if [ $CLEANUP_DONE -eq 1 ]; then
+        return
+    fi
+    CLEANUP_DONE=1
+    
+    echo -e "\n${YELLOW}Shutting down server...${NC}"
+    if [ ! -z "$SERVER_PID" ]; then
+        kill $SERVER_PID 2>/dev/null || true
+        wait $SERVER_PID 2>/dev/null || true
+    fi
+    
+    # Deactivate virtual environment if still active
+    if [ -n "$VIRTUAL_ENV" ]; then
+        deactivate
+    fi
+    
+    echo -e "${GREEN}Server stopped${NC}"
+}
+trap cleanup SIGINT SIGTERM EXIT
+
 # Start FastAPI
 if [ "$1" = "--prod" ]; then
-    uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+    echo -e "${BLUE}Starting server in production mode...${NC}"
+    uvicorn app.main:app --host 0.0.0.0 --port 8000
 else
-    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
+    echo -e "${BLUE}Starting server in development mode (with auto-reload)...${NC}"
+    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 fi
-
-SERVER_PID=$!
-deactivate
-
-echo -e "${GREEN}Server started (PID: $SERVER_PID)${NC}"
-wait $SERVER_PID

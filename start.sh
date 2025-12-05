@@ -1,84 +1,36 @@
 #!/bin/bash
 
-# Audio Scraping Service - Startup Script
-# This script starts both the client and server concurrently
-# Note: Run install.sh first if you haven't installed dependencies
+# Audio Scraping Service - Backend Startup Script
 
 set -e
 
-# Colors for output
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Get the directory where the script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLIENT_DIR="$SCRIPT_DIR/client"
-SERVER_DIR="$SCRIPT_DIR/server"
 
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Audio Scraping Service Startup${NC}"
-echo -e "${BLUE}========================================${NC}\n"
-
-# Quick checks for required installations
-if [ ! -d "$CLIENT_DIR/node_modules" ]; then
-    echo -e "${RED}Error: Client dependencies not installed${NC}"
-    echo -e "${YELLOW}Please run: ./install.sh${NC}"
+if [ ! -d "$SCRIPT_DIR/.venv" ]; then
+    echo -e "${RED}Virtual environment not found. Run install.sh first.${NC}"
     exit 1
 fi
 
-if [ ! -d "$SERVER_DIR/.venv" ]; then
-    echo -e "${RED}Error: Server virtual environment not found${NC}"
-    echo -e "${YELLOW}Please run: ./install.sh${NC}"
-    exit 1
-fi
-
-echo -e "${GREEN}✓ Dependencies verified${NC}\n"
-
-# Create log directory if it doesn't exist
-LOG_DIR="$SCRIPT_DIR/logs"
-mkdir -p "$LOG_DIR"
-
-# Function to cleanup background processes on exit
-cleanup() {
-    echo -e "\n${YELLOW}Shutting down services...${NC}"
-    kill $CLIENT_PID $SERVER_PID 2>/dev/null
-    wait $CLIENT_PID $SERVER_PID 2>/dev/null
-    echo -e "${GREEN}Services stopped${NC}"
-    exit 0
-}
-
-trap cleanup SIGINT SIGTERM
-
-# Start the server
-echo -e "${BLUE}Starting FastAPI server...${NC}"
-cd "$SERVER_DIR"
 source .venv/bin/activate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 > "$LOG_DIR/server.log" 2>&1 &
+python -V  # Should show 3.10.x
+
+echo -e "${GREEN}✓ Using Python: $(python -V)${NC}"
+
+# Start FastAPI
+if [ "$1" = "--prod" ]; then
+    uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+else
+    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
+fi
+
 SERVER_PID=$!
 deactivate
-echo -e "${GREEN}✓ Server started (PID: $SERVER_PID)${NC}"
-echo -e "  Server running at: ${BLUE}http://localhost:8000${NC}"
-echo -e "  Server logs: ${BLUE}$LOG_DIR/server.log${NC}\n"
 
-# Wait a bit for the server to start
-sleep 2
-
-# Start the client
-echo -e "${BLUE}Starting Vite development server...${NC}"
-cd "$CLIENT_DIR"
-npm run dev > "$LOG_DIR/client.log" 2>&1 &
-CLIENT_PID=$!
-echo -e "${GREEN}✓ Client started (PID: $CLIENT_PID)${NC}"
-echo -e "  Client running at: ${BLUE}http://localhost:5173${NC}"
-echo -e "  Client logs: ${BLUE}$LOG_DIR/client.log${NC}\n"
-
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  Both services are now running!${NC}"
-echo -e "${GREEN}========================================${NC}"
-echo -e "\n${YELLOW}Press Ctrl+C to stop both services${NC}\n"
-
-# Wait for both processes
-wait $CLIENT_PID $SERVER_PID
+echo -e "${GREEN}Server started (PID: $SERVER_PID)${NC}"
+wait $SERVER_PID

@@ -21,6 +21,7 @@ import yt_dlp
 import webrtcvad
 from app.utils import get_logger
 from app.core.config import settings
+from pydub import AudioSegment
 
 # Filter
 from df.enhance import enhance, init_df, load_audio, save_audio
@@ -180,7 +181,7 @@ class YouTubeProcessor:
             logger.info(f"Converting {actual_input_file} to mono 16kHz WAV format")
             result = subprocess.run([
                 "ffmpeg", "-y", "-i", actual_input_file,
-                "-ac", "1", "-ar", "16000", "-acodec", "pcm_s16le", 
+                "-ac", "1", "-ar", "48000", "-acodec", "pcm_s16le", 
                 output_file
             ], check=True, capture_output=True, text=True)
             logger.info("Audio conversion completed successfully")
@@ -338,6 +339,14 @@ class YouTubeProcessor:
                 # Enhance audio with DeepFilterNet (chunked for memory efficiency)
                 logger.info("Starting audio enhancement with DeepFilterNet")
                 self.enhance_audio_chunked(temp_audio_path, temp_audio_path, chunk_duration_seconds=600)
+                logger.info("Audio enhancement completed successfully")
+
+                # Re-sample audio to 16kHz
+                self.convert_audio_to_sample_rate(
+                    input_audio_path=temp_audio_path,
+                    output_audio_path=temp_audio_path,
+                    target_sample_rate=16000
+                )
                 
                 # Split with VAD
                 clips_data = self.split_with_vad(
@@ -496,3 +505,17 @@ class YouTubeProcessor:
         logger.info(f"Saving enhanced audio to {output_path}")
         save_audio(output_path, enhanced_audio, sr)
         logger.info("Audio enhancement completed successfully")
+
+    def convert_audio_to_sample_rate(self, input_audio_path: str, output_audio_path: str, target_sample_rate: int = 16000) -> None:
+        """Convert audio file to target sample rate."""
+        # Ensure output directory exists
+        output_dir = os.path.dirname(output_audio_path)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+        # Load and convert audio
+        audio = AudioSegment.from_file(input_audio_path)
+        audio = audio.set_frame_rate(target_sample_rate)
+        audio.export(output_audio_path, format="wav")
+        
+        logger.info(f"Audio converted to {target_sample_rate} Hz: {output_audio_path}")

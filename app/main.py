@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.database import init_database, close_database
 from app.core.gcp_auth import gcp_auth_manager
-from app.routes import youtube_router, health_router, statistics_router
+from app.routes import youtube_router, health_router, statistics_router, channels_router
 from app.utils import setup_logging, get_logger
 
 # Setup logging
@@ -89,6 +89,9 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(youtube_router)
     app.include_router(statistics_router)
+    app.include_router(channels_router,
+        prefix="/api"
+    )
     
     # Mount static files for audio clips
     app.mount("/output", StaticFiles(directory="output"), name="audio_files")

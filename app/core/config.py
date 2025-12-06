@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # Database configuration
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
-    SUPABASE_SERVICE_ROLE_KEY: str | None = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    # SUPABASE_SERVICE_ROLE_KEY: str | None = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
     # Google Cloud Storage configuration
     GCS_BUCKET_NAME: str = os.getenv("GCS_BUCKET_NAME", "")

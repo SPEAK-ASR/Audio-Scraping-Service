@@ -25,7 +25,7 @@ async def get_channels(
     Get all non-deleted YouTube channels for the admin UI.
 
     Returns:
-        List of ChannelCard objects with topicCategories and thumbnailUrl.
+        List of ChannelCard objects with domain and thumbnailUrl.
     """
     try:
         logger.info("Fetching channel list")

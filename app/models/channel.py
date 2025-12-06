@@ -15,10 +15,11 @@ class Channel(Base):
     Stores YouTube channels and metadata used for audio scraping.
     """
 
-    __tablename__ = "channels"  # must match your DB table name
+    __tablename__ = "Channel"  # must match your DB table name
 
     channel_id = Column(Text, primary_key=True)
     topic_categories = Column(ARRAY(Text), nullable=False)
+    domain = Column(Text, nullable=False)
     thumbnail_url = Column(Text, nullable=True)
     is_deleted = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=func.now())

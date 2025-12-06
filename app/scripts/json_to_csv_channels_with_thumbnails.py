@@ -56,7 +56,7 @@ def main():
             writer.writerow([channel_id, pg_array, thumb_url])
             rows_written += 1
 
-    print(f"✅ Wrote CSV to {OUTPUT_CSV} ({rows_written} channels)")
+    print(f"Wrote CSV to {OUTPUT_CSV} ({rows_written} channels)")
 
 
 if __name__ == "__main__":

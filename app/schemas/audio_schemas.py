@@ -12,7 +12,7 @@ DomainType = Literal[
     "science", "technology_and_computing", "business_and_finance", "entertainment",
     "food_and_drink", "law_and_justice", "environment_and_sustainability",
     "religion", "media_marketing", "history_and_cultural", "work_and_careers", 
-    'sports', 'music', "others"
+    "sports", "music", "others"
 ]
 
 

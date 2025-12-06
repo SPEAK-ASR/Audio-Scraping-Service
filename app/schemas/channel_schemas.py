@@ -9,5 +9,6 @@ class ChannelCard(BaseModel):
     """
 
     channelId: str
+    channelTitle: Optional[str] = None
     domain: str
     thumbnailUrl: Optional[str] = None

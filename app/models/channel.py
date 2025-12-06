@@ -18,6 +18,7 @@ class Channel(Base):
     __tablename__ = "Channel"  # must match your DB table name
 
     channel_id = Column(Text, primary_key=True)
+    channel_title = Column(Text, nullable=True)
     topic_categories = Column(ARRAY(Text), nullable=False)
     domain = Column(Text, nullable=False)
     thumbnail_url = Column(Text, nullable=True)

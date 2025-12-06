@@ -6,7 +6,7 @@ Output CSV (Postgres-friendly):
   channels_import.csv
 
 Columns:
- channel_id, topic_categories (Postgres array), thumbnail_url, domain
+ channel_id, channel_title, topic_categories (Postgres array), thumbnail_url, domain
 """
 import json
 import csv
@@ -218,6 +218,7 @@ def main():
         # Write header (removed is_deleted and created_at)
         writer.writerow([
             "channel_id", 
+            "channel_title",
             "topic_categories", 
             "thumbnail_url", 
             "domain"
@@ -227,6 +228,7 @@ def main():
             # Extract channel content
             channel_content = item.get("channel_content", {})
             channel_id = channel_content.get("channel_id")
+            channel_title = channel_content.get("channel_title") or channel_content.get("title") or "Unknown Channel"
             
             if not channel_id or channel_id in seen_channel_ids:
                 continue
@@ -258,6 +260,7 @@ def main():
             # Write data row (removed is_deleted and created_at)
             writer.writerow([
                 channel_id,
+                channel_title,
                 to_pg_text_array(normalized_topics),
                 thumbnail_url,
                 domain

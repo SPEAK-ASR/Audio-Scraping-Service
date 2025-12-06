@@ -24,6 +24,7 @@ async def list_channels(db: AsyncSession) -> List[ChannelCard]:
     return [
         ChannelCard(
             channelId=c.channel_id,
+            channelTitle=c.channel_title,
             domain=c.domain,
             thumbnailUrl=c.thumbnail_url,
         )

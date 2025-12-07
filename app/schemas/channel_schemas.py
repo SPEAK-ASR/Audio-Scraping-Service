@@ -1,4 +1,4 @@
-# app/schemas/channel.py
+# app/schemas/channel_schemas.py
 from typing import List, Optional
 from pydantic import BaseModel
 

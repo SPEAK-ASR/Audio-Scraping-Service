@@ -250,193 +250,253 @@ class YouTubeProcessor:
         
         return segments
     
+    
+    def merge_consecutive_small_segments(
+            self,
+            segments,
+            start_index,
+            MIN_DUR,
+            MAX_DUR,
+            DESIRED_MEAN,
+            merged_durations,
+            logger
+        ):
+            # Compute adjusted target for distribution control
+            n = len(merged_durations)
+            S = sum(merged_durations) if merged_durations else 0.0
+            adjusted_target = DESIRED_MEAN * (n + 1) - S
+
+            logger.info(
+                f"Adjusted target for merged clip: D_new = {adjusted_target:.2f}s "
+                f"(n={n}, S={S:.2f})"
+            )
+
+            segment_start, segment_end = segments[start_index]
+            merged_raw_start = segment_start
+            merged_raw_end = segment_end
+            merged_raw_duration = segment_end - segment_start
+
+            # Track best valid merge within duration bounds
+            best_valid = None  # (next_index, duration, end_time)
+
+            j = start_index + 1
+            while j < len(segments):
+                next_seg_start, next_seg_end = segments[j]
+                next_seg_duration = next_seg_end - next_seg_start
+
+                # Stop if the next segment is not small
+                if next_seg_duration >= MIN_DUR:
+                    break
+
+                merged_with_next = merged_raw_duration + next_seg_duration
+
+                # Enforce MAX_DUR as a hard constraint
+                if merged_with_next > MAX_DUR:
+                    logger.info(
+                        f"  Stopping merge - adding segment {j} would exceed MAX_DUR "
+                        f"({merged_with_next:.2f}s > {MAX_DUR:.2f}s)"
+                    )
+                    break
+
+                merged_raw_end = next_seg_end
+                merged_raw_duration = merged_with_next
+
+                logger.info(
+                    f"  Merging segment {j}: {next_seg_start:.2f}s-{next_seg_end:.2f}s "
+                    f"(duration: {next_seg_duration:.2f}s) -> "
+                    f"merged_duration={merged_raw_duration:.2f}s"
+                )
+
+                if MIN_DUR <= merged_raw_duration <= MAX_DUR:
+                    best_valid = (j + 1, merged_raw_duration, merged_raw_end)
+
+                j += 1
+
+            # Return best valid merge if available
+            if best_valid:
+                next_index, final_duration, final_end = best_valid
+                merged_durations.append(final_duration)
+
+                logger.info(
+                    f"Using best valid merged clip: duration={final_duration:.2f}s "
+                    f"(target was {adjusted_target:.2f}s)"
+                )
+                logger.info(
+                    f"Distribution: n={len(merged_durations)}, "
+                    f"S={sum(merged_durations):.2f}, "
+                    f"new_mean={sum(merged_durations) / len(merged_durations):.2f}s"
+                )
+
+                return {
+                    'start': merged_raw_start,
+                    'end': final_end,
+                    'duration': final_duration,
+                    'next_index': next_index
+                }
+
+            logger.info(
+                f"No valid merged clip found within range "
+                f"[{MIN_DUR:.2f}s, {MAX_DUR:.2f}s] - skipping"
+            )
+
+            return {
+                'next_index': j
+            }
+        
     def split_with_vad(self, input_file: str, output_dir: Path, video_id: str,
-                      aggressiveness: int = 2, start_padding: float = 1.0, 
-                      end_padding: float = 0.5) -> List[Dict[str, Any]]:
-        """Split audio file using Voice Activity Detection."""
-        with contextlib.closing(wave.open(input_file, 'rb')) as wf:
-            num_channels = wf.getnchannels()
-            assert num_channels == 1
-            sample_width = wf.getsampwidth()
-            assert sample_width == 2
-            sample_rate = wf.getframerate()
-            assert sample_rate in (8000, 16000, 32000, 48000)
-            pcm_data = wf.readframes(wf.getnframes())
-        
-        vad = webrtcvad.Vad(aggressiveness)
-        frames = list(self.frame_generator(30, pcm_data, sample_rate))
-        segments = self.vad_collector(sample_rate, 30, 300, vad, frames)
-        
-        # Create output directory with base directory structure
-        clips_output_dir = output_dir / "output" / video_id
-        clips_output_dir.mkdir(parents=True, exist_ok=True)
-        
-        clips_data = []
-        clip_counter = 1
-        
-        logger.info(f"Found {len(segments)} voice segments in audio")
-        
-        # ============================================================================
-        # SEGMENT MERGING AND PROCESSING
-        # ============================================================================
-        
-        MIN_DUR = settings.MIN_CLIP_DURATION
-        MAX_DUR = settings.MAX_CLIP_DURATION
-        DESIRED_MEAN = (MIN_DUR + MAX_DUR) / 2
-        
-        # List to track adjusted durations of merged clips for statistical distribution
-        # Only stores durations of clips that result from merging 2+ small segments
-        merged_durations = []
-        
-        logger.info(f"Clip duration constraints: MIN={MIN_DUR:.2f}s, MAX={MAX_DUR:.2f}s, TARGET_MEAN={DESIRED_MEAN:.2f}s")
-        
-        i = 0
-        
-        while i < len(segments):
-            segment_start, segment_end = segments[i]
-            segment_duration = segment_end - segment_start
+                    aggressiveness: int = 2, start_padding: float = 1.0, 
+                    end_padding: float = 0.5) -> List[Dict[str, Any]]:
+            """Split audio file using Voice Activity Detection."""
+            with contextlib.closing(wave.open(input_file, 'rb')) as wf:
+                num_channels = wf.getnchannels()
+                assert num_channels == 1
+                sample_width = wf.getsampwidth()
+                assert sample_width == 2
+                sample_rate = wf.getframerate()
+                assert sample_rate in (8000, 16000, 32000, 48000)
+                pcm_data = wf.readframes(wf.getnframes())
             
-            # Case 1: Segment within acceptable bounds [MIN_DUR, MAX_DUR]
-            if MIN_DUR <= segment_duration <= MAX_DUR:
-                logger.info(f"Segment {i}: {segment_start:.2f}s-{segment_end:.2f}s (duration: {segment_duration:.2f}s) - KEEP AS-IS")
-                final_start = segment_start
-                final_end = segment_end
-                final_duration = segment_duration
-                i += 1
+            vad = webrtcvad.Vad(aggressiveness)
+            frames = list(self.frame_generator(30, pcm_data, sample_rate))
+            segments = self.vad_collector(sample_rate, 30, 300, vad, frames)
+            
+            # Create output directory with base directory structure
+            clips_output_dir = output_dir / "output" / video_id
+            clips_output_dir.mkdir(parents=True, exist_ok=True)
+            
+            clips_data = []
+            clip_counter = 1
+            
+            logger.info(f"Found {len(segments)} voice segments in audio")
+            
+            # ============================================================================
+            # SEGMENT MERGING AND PROCESSING
+            # ============================================================================
 
-            # Case 2: Segment smaller than minimum - attempt to merge with consecutive small segments
-            elif segment_duration < MIN_DUR:
-                logger.info(f"Segment {i}: {segment_start:.2f}s-{segment_end:.2f}s (duration: {segment_duration:.2f}s) - SMALL, checking for merge candidates")
-                
-                # Count how many consecutive small segments follow this one
-                consecutive_small_count = 1
-                j = i + 1
-                
-                while j < len(segments) and (segments[j][1] - segments[j][0]) < MIN_DUR:
-                    consecutive_small_count += 1
-                    j += 1
-                
+            MIN_DUR = settings.MIN_CLIP_DURATION
+            MAX_DUR = settings.MAX_CLIP_DURATION
+            DESIRED_MEAN = (MIN_DUR + MAX_DUR) / 2
 
-                # Case 2a: Found 2+ consecutive small segments - MERGE THEM
-                if consecutive_small_count >= 2:
-                    logger.info(f"Found {consecutive_small_count} consecutive small segments starting at {i}")
-                    
-                    # COMPUTE ADJUSTED DURATION TARGET FOR THIS MERGED CLIP
-                    
-                    n = len(merged_durations)
-                    S = sum(merged_durations) if merged_durations else 0.0
-                    
-                    # Calculate target adjusted duration to maintain distribution mean
-                    adjusted_target = DESIRED_MEAN * (n + 1) - S
-                    
-                    logger.info(f"Adjusted target for merged clip: D_new = {adjusted_target:.2f}s (n={n}, S={S:.2f})")
-                    
-                    # Accumulate raw duration from consecutive small segments
-                    merged_raw_start = segment_start
-                    merged_raw_end = segment_end
-                    merged_raw_duration = segment_duration
-                    
-                    # Merge consecutive small segments using adjusted target as guide
+            merged_durations = []
+
+            logger.info(
+                f"Clip duration constraints: MIN={MIN_DUR:.2f}s, "
+                f"MAX={MAX_DUR:.2f}s, TARGET_MEAN={DESIRED_MEAN:.2f}s"
+            )
+
+            i = 0
+
+            while i < len(segments):
+                segment_start, segment_end = segments[i]
+                segment_duration = segment_end - segment_start
+
+                # Case 1: Valid segment
+                if MIN_DUR <= segment_duration <= MAX_DUR:
+                    logger.info(
+                        f"Segment {i}: {segment_start:.2f}s-{segment_end:.2f}s "
+                        f"(duration: {segment_duration:.2f}s) - KEEP AS-IS"
+                    )
+
+                    final_start = segment_start
+                    final_end = segment_end
+                    final_duration = segment_duration
+                    i += 1
+
+                # Case 2: Small segment
+                elif segment_duration < MIN_DUR:
+                    logger.info(
+                        f"Segment {i}: {segment_start:.2f}s-{segment_end:.2f}s "
+                        f"(duration: {segment_duration:.2f}s) - SMALL, checking for merge candidates"
+                    )
+
+                    # Count consecutive small segments
+                    consecutive_small_count = 1
                     j = i + 1
-                    while j < len(segments):
-                        next_seg_start, next_seg_end = segments[j]
-                        next_seg_duration = next_seg_end - next_seg_start
-                        
-                        # Only consider merging if this segment is also small
-                        if next_seg_duration < MIN_DUR:
-                            # Check if merging this segment brings us closer to the adjusted target
-                            merged_with_next = merged_raw_duration + next_seg_duration
-                            
-                            # Calculate how close each option is to the target
-                            distance_without = abs(merged_raw_duration - adjusted_target)
-                            distance_with = abs(merged_with_next - adjusted_target)
-                            
-                            # Merge if it brings us closer to the target, or if we're still far from target
-                            if distance_with <= distance_without or merged_raw_duration < adjusted_target:
-                                merged_raw_end = next_seg_end
-                                merged_raw_duration = merged_with_next
-                                logger.info(f"  Merging segment {j}: {next_seg_start:.2f}s-{next_seg_end:.2f}s (duration: {next_seg_duration:.2f}s) -> merged_duration={merged_raw_duration:.2f}s")
-                                j += 1
-                            else:
-                                # Stop merging if it moves us away from target
-                                logger.info(f"  Stopping merge - adding segment {j} would move away from target (distance_with={distance_with:.2f}s > distance_without={distance_without:.2f}s)")
-                                break
+                    while j < len(segments) and (segments[j][1] - segments[j][0]) < MIN_DUR:
+                        consecutive_small_count += 1
+                        j += 1
+
+                    if consecutive_small_count >= 2:
+                        logger.info(
+                            f"Found {consecutive_small_count} consecutive small segments starting at {i}"
+                        )
+
+                        merge_result = self.merge_consecutive_small_segments(
+                            segments=segments,
+                            start_index=i,
+                            MIN_DUR=MIN_DUR,
+                            MAX_DUR=MAX_DUR,
+                            DESIRED_MEAN=DESIRED_MEAN,
+                            merged_durations=merged_durations,
+                            logger=logger
+                        )
+
+                        if 'start' in merge_result:
+                            final_start = merge_result['start']
+                            final_end = merge_result['end']
+                            final_duration = merge_result['duration']
+                            i = merge_result['next_index']
                         else:
-                            # Stop merging when we encounter a non-small segment
-                            break
-                    
-                    logger.info(f"Merged segments {i}-{j-1}:")
-                    logger.info(f"  Raw duration (D_raw): {merged_raw_duration:.2f}s")
-                    logger.info(f"  Adjusted target (D_new): {adjusted_target:.2f}s")
-                    
-                    # Check if merged duration is within acceptable range
-                    if MIN_DUR <= merged_raw_duration <= MAX_DUR:
-                        # Store merged raw duration for statistical tracking (only valid clips)
-                        merged_durations.append(merged_raw_duration)
-                        logger.info(f"  Distribution: n={len(merged_durations)}, S={sum(merged_durations):.2f}, new_mean={sum(merged_durations) / len(merged_durations):.2f}s")
-                        
-                        # Use raw duration for actual audio processing
-                        final_start = merged_raw_start
-                        final_end = merged_raw_end
-                        final_duration = merged_raw_duration
-                        i = j  # Skip all merged segments
+                            i = merge_result['next_index']
+                            continue
                     else:
-                        # Skip clips outside the acceptable range
-                        logger.info(f"  Skipping merged clip - duration {merged_raw_duration:.2f}s outside range [{MIN_DUR:.2f}s, {MAX_DUR:.2f}s]")
-                        i = j
+                        logger.info(
+                            f"Only one small segment at {i} - skipping "
+                            f"(duration: {segment_duration:.2f}s < MIN_DUR)"
+                        )
+                        i += 1
                         continue
-                
-                # Case 2b: Only one small segment - SKIP
+
+                # Case 3: Large segment
                 else:
-                    logger.info(f"Only one small segment at {i} - skipping (duration: {segment_duration:.2f}s < MIN_DUR)")
+                    logger.info(
+                        f"Segment {i}: {segment_start:.2f}s-{segment_end:.2f}s "
+                        f"(duration: {segment_duration:.2f}s) - LARGE, skipping (duration > MAX_DUR)"
+                    )
                     i += 1
                     continue
+                
+                clip_name = f"{video_id}-{clip_counter:03d}.wav"
+                
+                # Extract original audio segment using raw timing
+                with contextlib.closing(wave.open(input_file, 'rb')) as wf:
+                    wf.setpos(int(final_start * sample_rate))
+                    frames_to_read = int(final_duration * sample_rate)
+                    audio_data = wf.readframes(frames_to_read)
+                
+                # Apply padding
+                start_padding_frames = int(start_padding * sample_rate)
+                end_padding_frames = int(end_padding * sample_rate)
+                start_silence_bytes = b'\x00' * (start_padding_frames * sample_width)
+                end_silence_bytes = b'\x00' * (end_padding_frames * sample_width)
+                
+                padded_data = start_silence_bytes + audio_data + end_silence_bytes
+                padded_duration = final_duration + start_padding + end_padding
+                
+                # Save padded audio clip to disk
+                clip_path = clips_output_dir / clip_name
+                with wave.open(str(clip_path), 'wb') as out_f:
+                    out_f.setnchannels(1)
+                    out_f.setsampwidth(sample_width)
+                    out_f.setframerate(sample_rate)
+                    out_f.writeframes(padded_data)
+                
+                clips_data.append({
+                    'clip_name': clip_name,
+                    'start_time': round(final_start, 2),
+                    'end_time': round(final_end, 2),
+                    'duration': round(final_duration, 2),
+                    'padded_duration': round(padded_duration, 2)
+                })
+                
+                clip_counter += 1
+            
+            logger.info(
+                f"Successfully created {len(clips_data)} audio clips from {len(segments)} segments"
+            )
+            return clips_data
 
-            # Case 3: Segment larger than maximum - SKIP
-            else:  # segment_duration > MAX_DUR
-                logger.info(f"Segment {i}: {segment_start:.2f}s-{segment_end:.2f}s (duration: {segment_duration:.2f}s) - LARGE, skipping (duration > MAX_DUR)")
-                i += 1
-                continue
-            
-            
-            clip_name = f"{video_id}-{clip_counter:03d}.wav"
-            
-            # Extract original audio segment using raw timing
-            with contextlib.closing(wave.open(input_file, 'rb')) as wf:
-                wf.setpos(int(final_start * sample_rate))
-                frames_to_read = int(final_duration * sample_rate)
-                audio_data = wf.readframes(frames_to_read)
-            
-            # Apply padding
-            start_padding_frames = int(start_padding * sample_rate)
-            end_padding_frames = int(end_padding * sample_rate)
-            start_silence_bytes = b'\x00' * (start_padding_frames * sample_width)
-            end_silence_bytes = b'\x00' * (end_padding_frames * sample_width)
-            
-            padded_data = start_silence_bytes + audio_data + end_silence_bytes
-            padded_duration = final_duration + start_padding + end_padding
-            
-            # Save padded audio clip to disk
-            clip_path = clips_output_dir / clip_name
-            with wave.open(str(clip_path), 'wb') as out_f:
-                out_f.setnchannels(1)
-                out_f.setsampwidth(2)
-                out_f.setframerate(sample_rate)
-                out_f.writeframes(padded_data)
-            
-            clips_data.append({
-                'clip_name': clip_name,
-                'start_time': round(final_start, 2),
-                'end_time': round(final_end, 2),
-                'duration': round(final_duration, 2),
-                'padded_duration': round(padded_duration, 2)
-            })
-            
-            clip_counter += 1
-        
-        logger.info(f"Successfully created {len(clips_data)} audio clips from {len(segments)} segments")
-        return clips_data
-    
+
     async def process_video(self, url: str, output_dir: Path, 
                           vad_aggressiveness: int = 2, start_padding: float = 1.0, 
                           end_padding: float = 0.5) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:

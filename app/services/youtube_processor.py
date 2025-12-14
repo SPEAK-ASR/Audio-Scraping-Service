@@ -251,97 +251,114 @@ class YouTubeProcessor:
         return segments
     
     
-    def merge_consecutive_small_segments(
-            self,
-            segments,
-            start_index,
-            MIN_DUR,
-            MAX_DUR,
-            DESIRED_MEAN,
-            merged_durations,
-            logger
-        ):
-            # Compute adjusted target for distribution control
-            n = len(merged_durations)
-            S = sum(merged_durations) if merged_durations else 0.0
-            adjusted_target = DESIRED_MEAN * (n + 1) - S
-
-            logger.info(
-                f"Adjusted target for merged clip: D_new = {adjusted_target:.2f}s "
-                f"(n={n}, S={S:.2f})"
-            )
-
+    def merge_consecutive_small_segments(self, segments: List[Tuple[float, float]], start_index: int,
+                                         MIN_DUR: float, MAX_DUR: float, DESIRED_MEAN: float,
+                                         merged_durations: List[float]) -> Tuple[float, float, float, int]:
+            """
+            Merge consecutive small segments starting from start_index and return:
+            final_start, final_end, final_duration, count_of_segments_used
+            """
             segment_start, segment_end = segments[start_index]
             merged_raw_start = segment_start
             merged_raw_end = segment_end
             merged_raw_duration = segment_end - segment_start
 
-            # Track best valid merge within duration bounds
-            best_valid = None  # (next_index, duration, end_time)
+            # Track best candidate within limits (closest to target, capped at MAX)
+            best_duration = merged_raw_duration
+            best_end = merged_raw_end
+            best_count = 1
 
-            j = start_index + 1
-            while j < len(segments):
-                next_seg_start, next_seg_end = segments[j]
+            # Best candidate that satisfies duration bounds and closeness to target
+            best_choice = None  # dict with duration, end, count, distance
+
+            n = len(merged_durations)
+            S = sum(merged_durations) if merged_durations else 0.0
+            adjusted_target = DESIRED_MEAN * (n + 1) - S
+            target_for_selection = min(adjusted_target, MAX_DUR)
+
+            logger.info(f"Adjusted target for merged clip: D_new = {adjusted_target:.2f}s (n={n}, S={S:.2f})")
+
+            # Initialize best_choice if the first segment already fits the bounds
+            if MIN_DUR <= merged_raw_duration <= MAX_DUR:
+                best_choice = {
+                    'duration': merged_raw_duration,
+                    'end': merged_raw_end,
+                    'count': best_count,
+                    'distance': abs(merged_raw_duration - target_for_selection)
+                }
+
+            k = start_index + 1
+            while k < len(segments):
+                next_seg_start, next_seg_end = segments[k]
                 next_seg_duration = next_seg_end - next_seg_start
 
-                # Stop if the next segment is not small
                 if next_seg_duration >= MIN_DUR:
-                    break
+                    break  # Stop merging when non-small segment encountered
 
                 merged_with_next = merged_raw_duration + next_seg_duration
 
-                # Enforce MAX_DUR as a hard constraint
+                # Enforce MAX_DUR as a hard constraint; keep best seen so far
                 if merged_with_next > MAX_DUR:
                     logger.info(
-                        f"  Stopping merge - adding segment {j} would exceed MAX_DUR "
+                        f"  Stopping merge - adding segment {k} would exceed MAX_DUR "
                         f"({merged_with_next:.2f}s > {MAX_DUR:.2f}s)"
                     )
                     break
 
-                merged_raw_end = next_seg_end
-                merged_raw_duration = merged_with_next
+                # Determine if merging brings closer to target
+                distance_without = abs(merged_raw_duration - target_for_selection)
+                distance_with = abs(merged_with_next - target_for_selection)
 
-                logger.info(
-                    f"  Merging segment {j}: {next_seg_start:.2f}s-{next_seg_end:.2f}s "
-                    f"(duration: {next_seg_duration:.2f}s) -> "
-                    f"merged_duration={merged_raw_duration:.2f}s"
-                )
+                if distance_with <= distance_without or merged_raw_duration < adjusted_target:
+                    merged_raw_end = next_seg_end
+                    merged_raw_duration = merged_with_next
+                    best_duration = merged_raw_duration
+                    best_end = merged_raw_end
+                    best_count += 1
+                    logger.info(
+                        f"  Merging segment {k}: {next_seg_start:.2f}s-{next_seg_end:.2f}s "
+                        f"(duration: {next_seg_duration:.2f}s) -> merged_duration={merged_raw_duration:.2f}s"
+                    )
 
-                if MIN_DUR <= merged_raw_duration <= MAX_DUR:
-                    best_valid = (j + 1, merged_raw_duration, merged_raw_end)
+                    if MIN_DUR <= merged_raw_duration <= MAX_DUR:
+                        distance = abs(merged_raw_duration - target_for_selection)
+                        if (
+                            best_choice is None
+                            or distance < best_choice['distance']
+                            or (distance == best_choice['distance'] and merged_raw_duration > best_choice['duration'])
+                        ):
+                            best_choice = {
+                                'duration': merged_raw_duration,
+                                'end': merged_raw_end,
+                                'count': best_count,
+                                'distance': distance
+                            }
+                    k += 1
+                else:
+                    logger.info(
+                        f"  Stopping merge at segment {k} - best-so-far merged duration={best_duration:.2f}s"
+                    )
+                    break
 
-                j += 1
-
-            # Return best valid merge if available
-            if best_valid:
-                next_index, final_duration, final_end = best_valid
-                merged_durations.append(final_duration)
-
-                logger.info(
-                    f"Using best valid merged clip: duration={final_duration:.2f}s "
-                    f"(target was {adjusted_target:.2f}s)"
-                )
-                logger.info(
-                    f"Distribution: n={len(merged_durations)}, "
-                    f"S={sum(merged_durations):.2f}, "
-                    f"new_mean={sum(merged_durations) / len(merged_durations):.2f}s"
-                )
-
-                return {
-                    'start': merged_raw_start,
-                    'end': final_end,
-                    'duration': final_duration,
-                    'next_index': next_index
-                }
+            # Pick the best candidate within bounds if available, else fall back to best_so_far
+            chosen = best_choice or {
+                'duration': best_duration,
+                'end': best_end,
+                'count': best_count
+            }
 
             logger.info(
-                f"No valid merged clip found within range "
-                f"[{MIN_DUR:.2f}s, {MAX_DUR:.2f}s] - skipping"
+                f"Chosen merged clip: duration={chosen['duration']:.2f}s, "
+                f"count={chosen['count']}, target={target_for_selection:.2f}s, "
+                f"adjusted_target={adjusted_target:.2f}s"
             )
 
-            return {
-                'next_index': j
-            }
+            final_start = merged_raw_start
+            final_end = chosen['end']
+            final_duration = chosen['duration']
+            final_count = chosen['count']
+
+            return final_start, final_end, final_duration, final_count
         
     def split_with_vad(self, input_file: str, output_dir: Path, video_id: str,
                     aggressiveness: int = 2, start_padding: float = 1.0, 
@@ -421,23 +438,28 @@ class YouTubeProcessor:
                             f"Found {consecutive_small_count} consecutive small segments starting at {i}"
                         )
 
-                        merge_result = self.merge_consecutive_small_segments(
-                            segments=segments,
-                            start_index=i,
-                            MIN_DUR=MIN_DUR,
-                            MAX_DUR=MAX_DUR,
-                            DESIRED_MEAN=DESIRED_MEAN,
-                            merged_durations=merged_durations,
-                            logger=logger
+                        final_start, final_end, final_duration, used_count = self.merge_consecutive_small_segments(
+                            segments, i, MIN_DUR, MAX_DUR, DESIRED_MEAN, merged_durations
                         )
 
-                        if 'start' in merge_result:
-                            final_start = merge_result['start']
-                            final_end = merge_result['end']
-                            final_duration = merge_result['duration']
-                            i = merge_result['next_index']
+                        if MIN_DUR <= final_duration <= MAX_DUR:
+                            merged_durations.append(final_duration)
+                            logger.info(
+                                f"  Distribution: n={len(merged_durations)}, S={sum(merged_durations):.2f}, "
+                                f"new_mean={sum(merged_durations) / len(merged_durations):.2f}s"
+                            )
+                            logger.info(
+                                f"  Added merged clip: start={final_start:.2f}s, "
+                                f"end={final_end:.2f}s, duration={final_duration:.2f}s, "
+                                f"used_segments={used_count}"
+                            )
+                            i += used_count
                         else:
-                            i = merge_result['next_index']
+                            logger.info(
+                                f"  Skipping merged clip - duration {final_duration:.2f}s outside range "
+                                f"[{MIN_DUR:.2f}s, {MAX_DUR:.2f}s]"
+                            )
+                            i += used_count
                             continue
                     else:
                         logger.info(

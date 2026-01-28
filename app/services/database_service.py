@@ -39,6 +39,30 @@ class DatabaseService:
             raise
     
     @staticmethod
+    async def check_videos_exist_batch(db: AsyncSession, video_ids: List[str]) -> List[str]:
+        """
+        Check which videos from a list already exist in the database.
+        
+        Args:
+            db: Database session
+            video_ids: List of YouTube video IDs to check
+            
+        Returns:
+            List of video IDs that exist in the database
+        """
+        try:
+            if not video_ids:
+                return []
+            
+            stmt = select(YouTubeVideo.video_id).where(YouTubeVideo.video_id.in_(video_ids))
+            result = await db.execute(stmt)
+            existing_video_ids = result.scalars().all()
+            return list(existing_video_ids)
+        except Exception as e:
+            logger.error(f"Error checking videos in batch: {e}")
+            raise
+    
+    @staticmethod
     async def save_video_metadata(db: AsyncSession, metadata: Dict[str, Any]) -> YouTubeVideo:
         """
         Save YouTube video metadata to the database.

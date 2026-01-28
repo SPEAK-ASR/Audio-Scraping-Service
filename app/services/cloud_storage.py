@@ -30,7 +30,7 @@ class CloudStorageService:
         """Initialize Google Cloud Storage client using the centralized auth manager."""
         return gcp_auth_manager.get_storage_client()
     
-    def upload_audio_file(self, file_path: str, blob_name: str) -> str:
+    async def upload_audio_file(self, file_path: str, blob_name: str) -> str:
         """
         Upload an audio file to Google Cloud Storage.
         
@@ -73,7 +73,6 @@ class CloudStorageService:
         Returns:
             List of dictionaries with file info and URLs
         """
-        from fastapi.concurrency import run_in_threadpool
         results = []
         
         for file_path in file_paths:
@@ -81,7 +80,7 @@ class CloudStorageService:
             blob_name = f"{blob_prefix}/{filename}" if blob_prefix else filename
             
             try:
-                url = await run_in_threadpool(self.upload_audio_file, file_path, blob_name)
+                url = await self.upload_audio_file(file_path, blob_name)
                 results.append({
                     'filename': filename,
                     'local_path': file_path,

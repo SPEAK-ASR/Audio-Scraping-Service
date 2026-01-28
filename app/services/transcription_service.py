@@ -29,7 +29,7 @@ class TranscriptionService:
             self.client = speech.SpeechClient()
     
     
-    def transcribe_audio(self, audio_file_path: str) -> Optional[str]:
+    async def transcribe_audio(self, audio_file_path: str) -> Optional[str]:
         """
         Transcribe an audio file using Google Speech-to-Text.
         
@@ -86,11 +86,10 @@ class TranscriptionService:
         Returns:
             List of dictionaries with filename and transcription
         """
-        from fastapi.concurrency import run_in_threadpool
         results = []
         
         for audio_file in audio_files:
-            transcription = await run_in_threadpool(self.transcribe_audio, audio_file)
+            transcription = await self.transcribe_audio(audio_file)
             results.append({
                 'filename': os.path.basename(audio_file),
                 'filepath': audio_file,

@@ -74,7 +74,7 @@ class YouTubeProcessor:
         
         raise ValueError(f"Could not extract video ID from URL: {youtube_url}")
     
-    def get_video_info(self, youtube_url: str) -> Tuple[Dict[str, Any], None]:
+    async def get_video_info(self, youtube_url: str) -> Tuple[Dict[str, Any], None]:
         """Get video metadata without downloading."""
         logger.info(f"Fetching video metadata from YouTube: {youtube_url}")
         
@@ -124,7 +124,7 @@ class YouTubeProcessor:
                 
         return f"https://www.youtube.com/watch?v={video_id}"
 
-    def get_playlist_info(self, playlist_url: str, limit: int = None) -> Dict[str, Any]:
+    async def get_playlist_info(self, playlist_url: str, limit: int = None) -> Dict[str, Any]:
         """
         Get playlist videos and metadata.
         
@@ -207,7 +207,7 @@ class YouTubeProcessor:
             raise RuntimeError(f"Playlist fetch failed: {str(e)}")
 
     
-    def download_audio(self, youtube_url: str, output_file: str) -> Dict[str, Any]:
+    async def download_audio(self, youtube_url: str, output_file: str) -> Dict[str, Any]:
         """Download audio from YouTube video and extract metadata."""
         logger.info(f"Starting audio download from YouTube: {youtube_url}")
         
@@ -618,7 +618,7 @@ class YouTubeProcessor:
             return clips_data
 
 
-    def process_video(self, url: str, output_dir: Path,
+    async def process_video(self, url: str, output_dir: Path, 
                           vad_aggressiveness: int = 2, start_padding: float = 1.0, 
                           end_padding: float = 0.5) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """Process a YouTube video: download and split into clips."""
@@ -629,7 +629,7 @@ class YouTubeProcessor:
             temp_audio_path = temp_file.name
             try:
                 # Download audio
-                metadata = self.download_audio(url, temp_audio_path)
+                metadata = await self.download_audio(url, temp_audio_path)
 
                 # Enhance audio with DeepFilterNet (chunked for memory efficiency)
                 logger.info("Starting audio enhancement with DeepFilterNet")
@@ -725,9 +725,7 @@ class YouTubeProcessor:
                 return existing_metadata, clips_data, is_new_video
         
         # Process new video
-        from fastapi.concurrency import run_in_threadpool
-        metadata, clips_data = await run_in_threadpool(
-            self.process_video,
+        metadata, clips_data = await self.process_video(
             url=url,
             output_dir=output_dir,
             vad_aggressiveness=vad_aggressiveness,

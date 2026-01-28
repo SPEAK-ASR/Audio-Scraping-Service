@@ -9,7 +9,6 @@ import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_database_session
@@ -115,8 +114,7 @@ async def split_youtube_audio(
             )
         
         # Download and split audio
-        video_metadata, clips_data = await run_in_threadpool(
-            get_youtube_processor().process_video,
+        video_metadata, clips_data = await get_youtube_processor().process_video(
             url=str(request.youtube_url),
             output_dir=base_dir,
             vad_aggressiveness=request.vad_aggressiveness,
@@ -229,10 +227,7 @@ async def transcribe_audio_clips(
         
         for clip_file in clip_files:
             try:
-                transcription = await run_in_threadpool(
-                    get_transcription_service().transcribe_audio,
-                    str(clip_file)
-                )
+                transcription = await get_transcription_service().transcribe_audio(str(clip_file))
                 # Handle case where transcription service returns None or empty string
                 if transcription is None or transcription.strip() == "":
                     logger.warning(f"Transcription service returned empty result for {clip_file.name}")
@@ -394,10 +389,7 @@ async def save_clips_to_cloud_and_database(
             try:
                 youtube_url = f"https://www.youtube.com/watch?v={request.video_id}"
                 logger.info(f"Re-fetching video metadata from YouTube for {request.video_id}")
-                video_metadata, _ = await run_in_threadpool(
-                    get_youtube_processor().get_video_info,
-                    youtube_url
-                )
+                video_metadata, _ = await get_youtube_processor().get_video_info(youtube_url)
             except Exception as e:
                 logger.warning(f"Failed to re-fetch video metadata: {e}")
                 # Create minimal metadata as fallback
@@ -421,8 +413,7 @@ async def save_clips_to_cloud_and_database(
                 # Upload to cloud storage if requested
                 if request.upload_to_cloud_bucket:
                     try:
-                        cloud_url = await run_in_threadpool(
-                            get_cloud_storage_service().upload_audio_file,
+                        cloud_url = await get_cloud_storage_service().upload_audio_file(
                             file_path=str(clip_file),
                             blob_name=clip_file.name
                         )

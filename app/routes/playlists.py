@@ -3,7 +3,6 @@ Playlist processing routes.
 """
 
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.concurrency import run_in_threadpool
 from app.schemas.playlist_schemas import PlaylistRequest, PlaylistResponse, PlaylistVideo
 from app.routes.youtube import get_youtube_processor
 from app.utils import get_logger
@@ -19,8 +18,7 @@ async def get_playlist_videos(request: PlaylistRequest):
     """
     processor = get_youtube_processor()
     try:
-        playlist_info = await run_in_threadpool(
-            processor.get_playlist_info,
+        playlist_info = await processor.get_playlist_info(
             str(request.playlist_url), 
             limit=request.limit
         )

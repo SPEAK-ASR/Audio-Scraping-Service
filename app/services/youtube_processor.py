@@ -107,6 +107,105 @@ class YouTubeProcessor:
         except Exception as e:
             logger.error(f"Unexpected error during metadata fetch: {str(e)}")
             raise RuntimeError(f"Metadata fetch failed: {str(e)}")
+
+    def _clean_youtube_url(self, url: str, video_id: str = None) -> str:
+        """
+        Clean YouTube URL to remove playlist parameters.
+        Returns format: https://www.youtube.com/watch?v=VIDEO_ID
+        """
+        if not video_id:
+            try:
+                # Try to extract ID from URL if not provided
+                video_id = self.extract_video_id(url)
+            except ValueError:
+                # If extraction fails, just return the original URL but warn
+                logger.warning(f"Could not extract video ID from {url} for cleaning. Returning original.")
+                return url
+                
+        return f"https://www.youtube.com/watch?v={video_id}"
+
+    async def get_playlist_info(self, playlist_url: str, limit: int = None) -> Dict[str, Any]:
+        """
+        Get playlist videos and metadata.
+        
+        Args:
+            playlist_url: YouTube playlist URL
+            limit: Optional max number of videos to return
+            
+        Returns:
+            Dictionary with playlist metadata and list of videos
+        """
+        logger.info(f"Fetching playlist metadata: {playlist_url}")
+        
+        ydl_opts = {
+            'extract_flat': 'in_playlist', 
+            'dump_single_json': True,
+            'flatten': True,
+            'ignoreerrors': True,
+            'quiet': True,
+            'no_warnings': True,
+        }
+        
+        if limit and limit > 0:
+            ydl_opts['playlistend'] = limit
+            
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # extract_info with extract_flat='in_playlist' returns a dictionary
+                # entries key contains the video list
+                result = ydl.extract_info(playlist_url, download=False)
+                
+                # Check if it's a playlist or single video
+                if 'entries' not in result:
+                    if result.get('_type') == 'playlist':
+                         entries = [] 
+                    else:
+                        # Single video?
+                        logger.warning(f"URL might not be a playlist: {playlist_url}")
+                        # Treat as single video playlist
+                        entries = [result]
+                else:
+                    entries = result['entries']
+
+                # Process entries
+                videos = []
+                for entry in entries:
+                    if not entry: # Skip None entries
+                        continue
+                        
+                    video_id = entry.get('id')
+                    original_url = entry.get('url') or f"https://www.youtube.com/watch?v={video_id}"
+                    
+                    # Clean the URL
+                    clean_url = self._clean_youtube_url(original_url, video_id)
+                    
+                    # Get duration safely
+                    duration = entry.get('duration')
+                    if duration is None:
+                         duration = 0
+                    
+                    videos.append({
+                        'video_id': video_id,
+                        'url': clean_url,
+                        'title': entry.get('title', 'Unknown Title'),
+                        'duration': int(duration),
+                        'thumbnail': entry.get('thumbnail') or (f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg" if video_id else None)
+                    })
+                    
+                return {
+                    'playlist_id': result.get('id'),
+                    'playlist_title': result.get('title', 'Unknown Playlist'),
+                    'total_videos': len(videos),
+                    'videos': videos
+                }
+                
+        except yt_dlp.utils.DownloadError as e:
+            logger.error(f"Playlist fetch failed: {str(e)}")
+            raise RuntimeError(f"Playlist fetch failed: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error during playlist fetch: {str(e)}")
+            raise RuntimeError(f"Playlist fetch failed: {str(e)}")
+
     
     async def download_audio(self, youtube_url: str, output_file: str) -> Dict[str, Any]:
         """Download audio from YouTube video and extract metadata."""

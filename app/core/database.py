@@ -37,16 +37,19 @@ ASYNC_DATABASE_URL = settings.DATABASE_URL.replace(
 )
 
 # Create async database engine with connection pooling
+# Pool sized for concurrent video processing (3 videos × ~3-4 connections each)
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
     echo=settings.DEBUG,
     poolclass=QueuePool,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,  # Verify connections before use
-    pool_recycle=3600,   # Recycle connections every hour
+    pool_size=10,         # Increased from 5 for concurrent processing
+    max_overflow=20,      # Increased from 10 for burst handling
+    pool_timeout=30,      # Wait up to 30s for a connection instead of failing
+    pool_pre_ping=True,   # Verify connections before use
+    pool_recycle=3600,    # Recycle connections every hour
     connect_args={
-        "command_timeout": 60,      # Command timeout in seconds
+        "timeout": 120,             # Connection timeout (asyncpg parameter)
+        "command_timeout": 120,     # Command timeout in seconds (increased for heavy load)
         "server_settings": {
             "application_name": "audio_scraping_service"
         }

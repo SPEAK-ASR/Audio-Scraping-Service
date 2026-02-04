@@ -22,6 +22,11 @@ python -V  # Should show 3.10.x
 
 echo -e "${GREEN}✓ Using Python: $(python -V)${NC}"
 
+# Always update yt-dlp to latest version
+echo -e "${BLUE}Updating yt-dlp to latest version...${NC}"
+python -m pip install --upgrade yt-dlp
+echo -e "${GREEN}✓ yt-dlp updated${NC}"
+
 # Setup cleanup function and trap BEFORE starting server
 CLEANUP_DONE=0
 cleanup() {

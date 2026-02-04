@@ -181,6 +181,8 @@ async def transcribe_audio_clips(
     """
     Step 2: Get Google transcriptions for existing audio clips.
     
+    Uses batch concurrent transcription for faster processing.
+    
     Args:
         request: Video ID and optional list of specific clip names to transcribe
         
@@ -222,30 +224,37 @@ async def transcribe_audio_clips(
                     detail=f"No audio clips found in directory for video {request.video_id}"
                 )
         
-        transcribed_clips = []
-        failed_clips = []
+        # Convert Path objects to strings for batch processing
+        audio_file_paths = [str(clip_file) for clip_file in clip_files]
         
-        for clip_file in clip_files:
-            try:
-                transcription = await get_transcription_service().transcribe_audio(str(clip_file))
-                # Handle case where transcription service returns None or empty string
-                if transcription is None or transcription.strip() == "":
-                    logger.warning(f"Transcription service returned empty result for {clip_file.name}")
-                    transcription = None
-                
-                transcribed_clips.append(TranscribedClip(
-                    clip_name=clip_file.name,
-                    transcription=transcription
-                ))
-                logger.info(f"Successfully processed transcription for {clip_file.name}")
-            except Exception as e:
-                logger.error(f"Transcription failed for {clip_file.name}: {e}")
-                # Add failed clips to both failed list and transcribed list with None transcription
-                failed_clips.append(clip_file.name)
-                transcribed_clips.append(TranscribedClip(
-                    clip_name=clip_file.name,
-                    transcription=None
-                ))
+        # Use batch concurrent transcription (5 files at a time)
+        logger.info(f"Starting batch transcription for {len(audio_file_paths)} clips")
+        batch_result = await get_transcription_service().transcribe_batch_concurrent(
+            audio_files=audio_file_paths,
+            batch_size=5
+        )
+        
+        # Process results
+        transcribed_clips = []
+        failed_clips = batch_result['failed']
+        
+        for item in batch_result['successful']:
+            transcription = item['transcription']
+            # Handle case where transcription service returns None or empty string
+            if transcription is None or (isinstance(transcription, str) and transcription.strip() == ""):
+                transcription = None
+            
+            transcribed_clips.append(TranscribedClip(
+                clip_name=item['filename'],
+                transcription=transcription
+            ))
+        
+        # Add failed clips with None transcription
+        for failed_filename in failed_clips:
+            transcribed_clips.append(TranscribedClip(
+                clip_name=failed_filename,
+                transcription=None
+            ))
         
         # Count successful transcriptions (those with non-null transcription)
         successful_count = sum(1 for clip in transcribed_clips if clip.transcription is not None)
@@ -292,6 +301,11 @@ async def save_clips_to_cloud_and_database(
 ):
     """
     Step 3: Save processed clips to cloud storage and add data to database.
+    
+    This endpoint uses:
+    - Batch concurrent uploads for cloud storage (faster)
+    - Database transactions for atomicity (all-or-nothing)
+    - Rollback mechanism: if database fails, uploaded files are deleted
     
     Args:
         request: Video ID, clip names, and storage/database options
@@ -401,48 +415,83 @@ async def save_clips_to_cloud_and_database(
         
         processed_clips = []
         failed_clips = []
+        uploaded_blob_names = []  # Track uploaded files for potential rollback
         
-        for clip_file in clip_files:
-            try:
-                clip_result = {
-                    "clip_name": clip_file.name,
-                    "cloud_url": None,
-                    "database_id": None
+        # ============================================================
+        # PHASE 1: Batch upload to cloud storage (concurrent uploads)
+        # ============================================================
+        cloud_urls = {}  # Map clip_name -> cloud_url
+        
+        if request.upload_to_cloud_bucket:
+            logger.info(f"Starting batch upload of {len(clip_files)} files to cloud storage")
+            
+            # Prepare files for batch upload
+            files_to_upload = [
+                {
+                    'file_path': str(clip_file),
+                    'blob_name': clip_file.name
                 }
+                for clip_file in clip_files
+            ]
+            
+            # Perform batch concurrent upload
+            upload_result = await get_cloud_storage_service().upload_batch_concurrent(
+                files=files_to_upload,
+                batch_size=5  # Upload 5 files concurrently at a time
+            )
+            
+            # Process upload results
+            for item in upload_result['successful']:
+                cloud_urls[item['blob_name']] = item['url']
+                uploaded_blob_names.append(item['blob_name'])
+            
+            for item in upload_result['failed']:
+                failed_clips.append(item['blob_name'])
+                logger.error(f"Cloud upload failed for {item['blob_name']}: {item['error']}")
+            
+            logger.info(f"Batch upload complete: {len(cloud_urls)} successful, {len(upload_result['failed'])} failed")
+            
+            # If all uploads failed, return early
+            if not cloud_urls:
+                raise HTTPException(
+                    status_code=500,
+                    detail="All cloud uploads failed"
+                )
+        
+        # ============================================================
+        # PHASE 2: Database operations with transaction (atomicity)
+        # ============================================================
+        if request.add_to_transcription_service:
+            try:
+                # Get clips that were successfully uploaded (or all clips if not uploading to cloud)
+                clips_to_save = [
+                    cf for cf in clip_files 
+                    if cf.name not in failed_clips
+                ]
                 
-                # Upload to cloud storage if requested
-                if request.upload_to_cloud_bucket:
-                    try:
-                        cloud_url = await get_cloud_storage_service().upload_audio_file(
-                            file_path=str(clip_file),
-                            blob_name=clip_file.name
-                        )
-                        clip_result["cloud_url"] = cloud_url
-                        logger.info(f"Uploaded {clip_file.name} to cloud storage")
-                    except Exception as e:
-                        logger.error(f"Cloud upload failed for {clip_file.name}: {e}")
-                        raise
+                logger.info(f"Starting database transaction for {len(clips_to_save)} clips")
                 
-                # Save to database if requested
-                if request.add_to_transcription_service:
+                # First, get or create the YouTube video record
+                existing_video = await DatabaseService.check_video_exists(db, request.video_id)
+                if not existing_video and video_metadata:
+                    logger.info(f"Creating new video record for {request.video_id}")
+                    existing_video = await DatabaseService.save_video_metadata(db, video_metadata)
+                elif not existing_video:
+                    logger.warning(f"No video metadata available for {request.video_id}")
+                    # Create minimal fallback record
+                    fallback_metadata = {
+                        'video_id': request.video_id,
+                        'title': f'Video {request.video_id}',
+                        'url': f'https://youtube.com/watch?v={request.video_id}'
+                    }
+                    existing_video = await DatabaseService.save_video_metadata(db, fallback_metadata)
+                
+                # Save all audio clips within the same transaction context
+                # Note: We're NOT committing after each clip - we batch them
+                for clip_file in clips_to_save:
                     try:
                         # Get transcription if available
                         transcription = transcriptions.get(clip_file.name, None)
-                        
-                        # First, we need to get or create the YouTube video record
-                        existing_video = await DatabaseService.check_video_exists(db, request.video_id)
-                        if not existing_video and video_metadata:
-                            logger.info(f"Creating new video record for {request.video_id}")
-                            existing_video = await DatabaseService.save_video_metadata(db, video_metadata)
-                        elif not existing_video:
-                            logger.warning(f"No video metadata available for {request.video_id}")
-                            # Create minimal fallback record
-                            fallback_metadata = {
-                                'video_id': request.video_id,
-                                'title': f'Video {request.video_id}',
-                                'url': f'https://youtube.com/watch?v={request.video_id}'
-                            }
-                            existing_video = await DatabaseService.save_video_metadata(db, fallback_metadata)
                         
                         # Get clip data from metadata or create defaults
                         clip_data = clip_metadata.get(clip_file.name, {
@@ -456,24 +505,52 @@ async def save_clips_to_cloud_and_database(
                         # Ensure clip_name is set
                         clip_data['clip_name'] = clip_file.name
                         
-                        audio_record = await DatabaseService.save_audio_clip(
+                        # Create Audio record (but don't commit yet - batched transaction)
+                        audio_record = await DatabaseService.save_audio_clip_no_commit(
                             db=db,
                             clip_data=clip_data,
                             youtube_video_id=existing_video.id,
                             transcription=transcription
                         )
                         
-                        clip_result["database_id"] = str(audio_record.audio_id)
-                        logger.info(f"Saved {clip_file.name} to database")
+                        processed_clips.append({
+                            "clip_name": clip_file.name,
+                            "cloud_url": cloud_urls.get(clip_file.name),
+                            "database_id": str(audio_record.audio_id)
+                        })
+                        
                     except Exception as e:
-                        logger.error(f"Database save failed for {clip_file.name}: {e}")
-                        raise
+                        logger.error(f"Failed to prepare database record for {clip_file.name}: {e}")
+                        raise  # Re-raise to trigger transaction rollback
                 
-                processed_clips.append(clip_result)
+                # Commit all database operations at once (atomic)
+                await db.commit()
+                logger.info(f"Database transaction committed successfully for {len(processed_clips)} clips")
                 
-            except Exception as e:
-                logger.error(f"Processing failed for {clip_file.name}: {e}")
-                failed_clips.append(clip_file.name)
+            except Exception as db_error:
+                # Rollback database transaction
+                await db.rollback()
+                logger.error(f"Database transaction failed, rolling back: {db_error}")
+                
+                # Rollback cloud uploads if database failed
+                if uploaded_blob_names:
+                    logger.info(f"Rolling back {len(uploaded_blob_names)} cloud uploads due to database failure")
+                    rollback_result = get_cloud_storage_service().delete_files_batch(uploaded_blob_names)
+                    logger.info(f"Rollback complete: {len(rollback_result['successful'])} deleted, {len(rollback_result['failed'])} failed to delete")
+                
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Database operation failed (uploads rolled back): {str(db_error)}"
+                )
+        else:
+            # No database operations - just add cloud URLs to processed clips
+            for clip_file in clip_files:
+                if clip_file.name not in failed_clips:
+                    processed_clips.append({
+                        "clip_name": clip_file.name,
+                        "cloud_url": cloud_urls.get(clip_file.name),
+                        "database_id": None
+                    })
         
         # Move folder to completed directory after successful processing
         try:

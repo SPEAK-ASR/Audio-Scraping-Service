@@ -41,11 +41,27 @@ fi
 source .venv/bin/activate
 pip install --upgrade pip
 
-# Install PyTorch with CPU support first
-echo -e "${YELLOW}Installing PyTorch (CPU version) and deepfilternet...${NC}"
-pip install torch==2.0.1+cpu torchaudio==2.0.2+cpu --index-url https://download.pytorch.org/whl/cpu
+# Prompt user for PyTorch version preference
+echo -e "${BLUE}Select PyTorch version:${NC}"
+echo -e "1) CUDA (GPU support)"
+echo -e "2) CPU only"
+read -p "Enter your choice (1 or 2): " pytorch_choice
+
+if [ "$pytorch_choice" == "1" ]; then
+    echo -e "${YELLOW}Installing PyTorch with CUDA support and deepfilternet...${NC}"
+    pip install torch==2.0.1+cu118 torchaudio==2.0.2+cu118 --index-url https://download.pytorch.org/whl/cu118
+    echo -e "${GREEN}✓ PyTorch (CUDA) and deepfilternet installed${NC}"
+elif [ "$pytorch_choice" == "2" ]; then
+    echo -e "${YELLOW}Installing PyTorch with CPU support and deepfilternet...${NC}"
+    pip install torch==2.0.1+cpu torchaudio==2.0.2+cpu --index-url https://download.pytorch.org/whl/cpu
+    echo -e "${GREEN}✓ PyTorch (CPU) and deepfilternet installed${NC}"
+else
+    echo -e "${RED}Invalid choice. Defaulting to CPU version...${NC}"
+    pip install torch==2.0.1+cpu torchaudio==2.0.2+cpu --index-url https://download.pytorch.org/whl/cpu
+    echo -e "${GREEN}✓ PyTorch (CPU) and deepfilternet installed${NC}"
+fi
+
 pip install deepfilternet
-echo -e "${GREEN}✓ PyTorch and deepfilternet installed${NC}"
 
 # Install remaining dependencies
 echo -e "${YELLOW}Installing remaining dependencies...${NC}"

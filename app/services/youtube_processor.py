@@ -472,7 +472,7 @@ class YouTubeProcessor:
             return final_start, final_end, final_duration, final_count
         
     def split_with_vad(self, input_file: str, output_dir: Path, video_id: str,
-                    aggressiveness: int = 2, start_padding: float = 1.0, 
+                    aggressiveness: int = 3, start_padding: float = 1.0, 
                     end_padding: float = 0.5) -> List[Dict[str, Any]]:
             """Split audio file using Voice Activity Detection."""
             with contextlib.closing(wave.open(input_file, 'rb')) as wf:
@@ -715,7 +715,7 @@ class YouTubeProcessor:
 
 
     async def process_video(self, url: str, output_dir: Path, 
-                          vad_aggressiveness: int = 2, start_padding: float = 1.0, 
+                          vad_aggressiveness: int = 3, start_padding: float = 1.0, 
                           end_padding: float = 0.5) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """Process a YouTube video: download and split into clips."""
         video_id = self.extract_video_id(url)
@@ -762,7 +762,7 @@ class YouTubeProcessor:
         output_dir: Path,
         db_session,  # AsyncSession
         check_existing: bool = True,
-        vad_aggressiveness: int = 2, 
+        vad_aggressiveness: int = 3, 
         start_padding: float = 1.0, 
         end_padding: float = 0.5
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], bool]:

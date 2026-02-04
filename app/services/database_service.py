@@ -220,6 +220,95 @@ class DatabaseService:
             raise
     
     @staticmethod
+    async def save_audio_clip_no_commit(
+        db: AsyncSession,
+        clip_data: Dict[str, Any],
+        youtube_video_id: str,
+        transcription: Optional[str] = None
+    ) -> Audio:
+        """
+        Save audio clip data to the database WITHOUT committing.
+        Used for batch operations where commit happens at the end.
+        
+        Args:
+            db: Database session
+            clip_data: Audio clip information
+            youtube_video_id: UUID of the YouTube video this clip belongs to
+            transcription: Optional Google transcription
+            
+        Returns:
+            Created Audio instance (not yet committed)
+        """
+        try:
+            # Convert start_time and end_time to time objects
+            from datetime import time
+            start_time_obj = None
+            end_time_obj = None
+            
+            if clip_data.get('start_time') is not None:
+                try:
+                    start_seconds = float(clip_data['start_time'])
+                    total_seconds = int(start_seconds)
+                    microseconds = int((start_seconds % 1) * 1000000)
+                    
+                    # Handle times that might exceed 24 hours by wrapping
+                    hours = (total_seconds // 3600) % 24
+                    minutes = (total_seconds % 3600) // 60
+                    seconds_part = total_seconds % 60
+                    
+                    start_time_obj = time(
+                        hour=hours,
+                        minute=minutes,
+                        second=seconds_part,
+                        microsecond=microseconds
+                    )
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Failed to convert start_time {clip_data.get('start_time')}: {e}")
+                    start_time_obj = None
+            
+            if clip_data.get('end_time') is not None:
+                try:
+                    end_seconds = float(clip_data['end_time'])
+                    total_seconds = int(end_seconds)
+                    microseconds = int((end_seconds % 1) * 1000000)
+                    
+                    # Handle times that might exceed 24 hours by wrapping
+                    hours = (total_seconds // 3600) % 24
+                    minutes = (total_seconds % 3600) // 60
+                    seconds_part = total_seconds % 60
+                    
+                    end_time_obj = time(
+                        hour=hours,
+                        minute=minutes,
+                        second=seconds_part,
+                        microsecond=microseconds
+                    )
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Failed to convert end_time {clip_data.get('end_time')}: {e}")
+                    end_time_obj = None
+            
+            audio = Audio(
+                audio_filename=clip_data.get('clip_name'),
+                google_transcription=transcription if transcription else "",  # Empty string instead of None
+                transcription_count=0,  # Will be updated by database trigger
+                start_time=start_time_obj,
+                end_time=end_time_obj,
+                padded_duration=clip_data.get('padded_duration'),
+                youtube_video_id=youtube_video_id
+            )
+            
+            db.add(audio)
+            # Flush to get the ID but don't commit yet
+            await db.flush()
+            
+            logger.info(f"Prepared audio clip for batch commit: {clip_data.get('clip_name')}")
+            return audio
+            
+        except Exception as e:
+            logger.error(f"Error preparing audio clip: {e}")
+            raise
+    
+    @staticmethod
     async def get_video_audio_clips(db: AsyncSession, video_id: str) -> List[Audio]:
         """
         Get all audio clips for a specific YouTube video.

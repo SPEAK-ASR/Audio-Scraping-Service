@@ -16,6 +16,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import Dict, List, Tuple, Any
+from concurrent.futures import ThreadPoolExecutor
 
 import yt_dlp
 import webrtcvad
@@ -27,6 +28,9 @@ from pydub import AudioSegment
 from df.enhance import enhance, init_df, load_audio, save_audio
 
 logger = get_logger(__name__)
+
+# Thread pool for parallel clip extraction
+_clip_extraction_executor = ThreadPoolExecutor(max_workers=4)
 
 
 class Frame:
@@ -223,6 +227,10 @@ class YouTubeProcessor:
             'outtmpl': temp_raw_file,
             'quiet': True,  # Reduce yt-dlp output noise
             'no_warnings': False,
+            # Performance optimizations
+            'concurrent_fragment_downloads': 4,  # Download fragments in parallel
+            'buffersize': 1024 * 16,  # Larger buffer for faster downloads
+            'http_chunk_size': 10485760,  # 10MB chunks for better throughput
         }
         
         try:
@@ -278,9 +286,13 @@ class YouTubeProcessor:
         
         try:
             logger.info(f"Converting {actual_input_file} to mono 16kHz WAV format")
+            # Use multi-threaded FFmpeg for faster conversion
             result = subprocess.run([
-                "ffmpeg", "-y", "-i", actual_input_file,
-                "-ac", "1", "-ar", "48000", "-acodec", "pcm_s16le", 
+                "ffmpeg", "-y", 
+                "-threads", "0",  # Auto-detect optimal thread count
+                "-i", actual_input_file,
+                "-ac", "1", "-ar", "48000", "-acodec", "pcm_s16le",
+                "-threads", "0",  # Output threads as well
                 output_file
             ], check=True, capture_output=True, text=True)
             logger.info("Audio conversion completed successfully")
@@ -480,9 +492,6 @@ class YouTubeProcessor:
             clips_output_dir = output_dir / "output" / video_id
             clips_output_dir.mkdir(parents=True, exist_ok=True)
             
-            clips_data = []
-            clip_counter = 1
-            
             logger.info(f"Found {len(segments)} voice segments in audio")
             
             # ============================================================================
@@ -500,6 +509,9 @@ class YouTubeProcessor:
                 f"MAX={MAX_DUR:.2f}s, TARGET_MEAN={DESIRED_MEAN:.2f}s"
             )
 
+            # First pass: Determine which segments to keep and their final timings
+            clips_to_extract = []
+            clip_counter = 1
             i = 0
 
             while i < len(segments):
@@ -513,9 +525,13 @@ class YouTubeProcessor:
                         f"(duration: {segment_duration:.2f}s) - KEEP AS-IS"
                     )
 
-                    final_start = segment_start
-                    final_end = segment_end
-                    final_duration = segment_duration
+                    clips_to_extract.append({
+                        'clip_number': clip_counter,
+                        'final_start': segment_start,
+                        'final_end': segment_end,
+                        'final_duration': segment_duration
+                    })
+                    clip_counter += 1
                     i += 1
 
                 # Case 2: Small segment
@@ -552,6 +568,13 @@ class YouTubeProcessor:
                                 f"end={final_end:.2f}s, duration={final_duration:.2f}s, "
                                 f"used_segments={used_count}"
                             )
+                            clips_to_extract.append({
+                                'clip_number': clip_counter,
+                                'final_start': final_start,
+                                'final_end': final_end,
+                                'final_duration': final_duration
+                            })
+                            clip_counter += 1
                             i += used_count
                         else:
                             logger.info(
@@ -559,14 +582,12 @@ class YouTubeProcessor:
                                 f"[{MIN_DUR:.2f}s, {MAX_DUR:.2f}s]"
                             )
                             i += used_count
-                            continue
                     else:
                         logger.info(
                             f"Only one small segment at {i} - skipping "
                             f"(duration: {segment_duration:.2f}s < MIN_DUR)"
                         )
                         i += 1
-                        continue
 
                 # Case 3: Large segment
                 else:
@@ -575,47 +596,122 @@ class YouTubeProcessor:
                         f"(duration: {segment_duration:.2f}s) - LARGE, skipping (duration > MAX_DUR)"
                     )
                     i += 1
-                    continue
-                
-                clip_name = f"{video_id}-{clip_counter:03d}.wav"
-                
-                # Extract original audio segment using raw timing
-                with contextlib.closing(wave.open(input_file, 'rb')) as wf:
-                    wf.setpos(int(final_start * sample_rate))
-                    frames_to_read = int(final_duration * sample_rate)
-                    audio_data = wf.readframes(frames_to_read)
-                
-                # Apply padding
-                start_padding_frames = int(start_padding * sample_rate)
-                end_padding_frames = int(end_padding * sample_rate)
-                start_silence_bytes = b'\x00' * (start_padding_frames * sample_width)
-                end_silence_bytes = b'\x00' * (end_padding_frames * sample_width)
-                
-                padded_data = start_silence_bytes + audio_data + end_silence_bytes
-                padded_duration = final_duration + start_padding + end_padding
-                
-                # Save padded audio clip to disk
-                clip_path = clips_output_dir / clip_name
-                with wave.open(str(clip_path), 'wb') as out_f:
-                    out_f.setnchannels(1)
-                    out_f.setsampwidth(sample_width)
-                    out_f.setframerate(sample_rate)
-                    out_f.writeframes(padded_data)
-                
-                clips_data.append({
-                    'clip_name': clip_name,
-                    'start_time': round(final_start, 2),
-                    'end_time': round(final_end, 2),
-                    'duration': round(final_duration, 2),
-                    'padded_duration': round(padded_duration, 2)
-                })
-                
-                clip_counter += 1
+            
+            # Second pass: Extract clips in parallel for faster processing
+            logger.info(f"Extracting {len(clips_to_extract)} clips in parallel")
+            
+            clips_data = self._extract_clips_parallel(
+                input_file=input_file,
+                clips_output_dir=clips_output_dir,
+                video_id=video_id,
+                clips_to_extract=clips_to_extract,
+                sample_rate=sample_rate,
+                sample_width=sample_width,
+                pcm_data=pcm_data,
+                start_padding=start_padding,
+                end_padding=end_padding
+            )
             
             logger.info(
                 f"Successfully created {len(clips_data)} audio clips from {len(segments)} segments"
             )
             return clips_data
+    
+    def _extract_single_clip(
+        self,
+        clip_info: Dict,
+        clips_output_dir: Path,
+        video_id: str,
+        sample_rate: int,
+        sample_width: int,
+        pcm_data: bytes,
+        start_padding: float,
+        end_padding: float
+    ) -> Dict[str, Any]:
+        """Extract a single clip from audio data."""
+        clip_number = clip_info['clip_number']
+        final_start = clip_info['final_start']
+        final_end = clip_info['final_end']
+        final_duration = clip_info['final_duration']
+        
+        clip_name = f"{video_id}-{clip_number:03d}.wav"
+        
+        # Calculate byte positions
+        start_byte = int(final_start * sample_rate) * sample_width
+        end_byte = int(final_end * sample_rate) * sample_width
+        audio_data = pcm_data[start_byte:end_byte]
+        
+        # Apply padding
+        start_padding_frames = int(start_padding * sample_rate)
+        end_padding_frames = int(end_padding * sample_rate)
+        start_silence_bytes = b'\x00' * (start_padding_frames * sample_width)
+        end_silence_bytes = b'\x00' * (end_padding_frames * sample_width)
+        
+        padded_data = start_silence_bytes + audio_data + end_silence_bytes
+        padded_duration = final_duration + start_padding + end_padding
+        
+        # Save padded audio clip to disk
+        clip_path = clips_output_dir / clip_name
+        with wave.open(str(clip_path), 'wb') as out_f:
+            out_f.setnchannels(1)
+            out_f.setsampwidth(sample_width)
+            out_f.setframerate(sample_rate)
+            out_f.writeframes(padded_data)
+        
+        return {
+            'clip_name': clip_name,
+            'start_time': round(final_start, 2),
+            'end_time': round(final_end, 2),
+            'duration': round(final_duration, 2),
+            'padded_duration': round(padded_duration, 2)
+        }
+    
+    def _extract_clips_parallel(
+        self,
+        input_file: str,
+        clips_output_dir: Path,
+        video_id: str,
+        clips_to_extract: List[Dict],
+        sample_rate: int,
+        sample_width: int,
+        pcm_data: bytes,
+        start_padding: float,
+        end_padding: float
+    ) -> List[Dict[str, Any]]:
+        """Extract multiple clips in parallel using thread pool."""
+        import concurrent.futures
+        
+        clips_data = []
+        
+        # Use thread pool for parallel extraction
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            futures = []
+            for clip_info in clips_to_extract:
+                future = executor.submit(
+                    self._extract_single_clip,
+                    clip_info,
+                    clips_output_dir,
+                    video_id,
+                    sample_rate,
+                    sample_width,
+                    pcm_data,
+                    start_padding,
+                    end_padding
+                )
+                futures.append(future)
+            
+            # Collect results in order
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    clip_data = future.result()
+                    clips_data.append(clip_data)
+                except Exception as e:
+                    logger.error(f"Error extracting clip: {e}")
+        
+        # Sort by clip name to maintain order
+        clips_data.sort(key=lambda x: x['clip_name'])
+        
+        return clips_data
 
 
     async def process_video(self, url: str, output_dir: Path, 
@@ -745,6 +841,8 @@ class YouTubeProcessor:
         """
         Enhance audio using DeepFilterNet in chunks to handle long audio files.
         
+        Uses optimized chunk processing for better performance.
+        
         Args:
             input_path: Path to input audio file
             output_path: Path to save enhanced audio
@@ -752,12 +850,24 @@ class YouTubeProcessor:
         """
         import torch
         import numpy as np
-        logger.info(f"Enhancing audio with DeepFilterNet (chunked processing)")
+        logger.info(f"Enhancing audio with DeepFilterNet (optimized chunked processing)")
+        
+        # Check for GPU availability
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        logger.info(f"Using device: {device}")
         
         # Load full audio
         audio, audio_meta = load_audio(input_path, sr=self.df_state.sr())
         sr = self.df_state.sr()  # Use the model's sample rate
         logger.info(f"Audio loaded: {audio.shape[1]} samples, {audio.shape[1]/sr:.2f} seconds")
+        
+        # Use larger chunks for better GPU utilization (if GPU available)
+        if device == "cuda":
+            # Larger chunks for GPU - better throughput
+            chunk_duration_seconds = min(chunk_duration_seconds, 900)  # 15 minutes max
+        else:
+            # Smaller chunks for CPU to avoid memory issues
+            chunk_duration_seconds = min(chunk_duration_seconds, 300)  # 5 minutes max
         
         # Calculate chunk size in samples
         chunk_size = int(chunk_duration_seconds * sr)

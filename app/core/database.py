@@ -37,21 +37,23 @@ ASYNC_DATABASE_URL = settings.DATABASE_URL.replace(
 )
 
 # Create async database engine with connection pooling
-# Pool sized for concurrent video processing (3 videos × ~3-4 connections each)
+# Pool sized for concurrent video processing (5 videos × ~2-3 connections each + overhead)
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
     echo=settings.DEBUG,
     poolclass=QueuePool,
-    pool_size=10,         # Increased from 5 for concurrent processing
-    max_overflow=20,      # Increased from 10 for burst handling
-    pool_timeout=30,      # Wait up to 30s for a connection instead of failing
+    pool_size=15,         # Base pool: 5 concurrent videos × 2 connections + 5 overhead
+    max_overflow=25,      # Burst capacity (total 40 connections)
+    pool_timeout=60,      # Wait up to 60s for a connection (increased for concurrent load)
     pool_pre_ping=True,   # Verify connections before use
     pool_recycle=3600,    # Recycle connections every hour
     connect_args={
         "timeout": 120,             # Connection timeout (asyncpg parameter)
         "command_timeout": 120,     # Command timeout in seconds (increased for heavy load)
         "server_settings": {
-            "application_name": "audio_scraping_service"
+            "application_name": "audio_scraping_service",
+            "statement_timeout": "30000",  # 30 second timeout for queries (in milliseconds)
+            "idle_in_transaction_session_timeout": "60000"  # 60 sec idle in transaction timeout
         }
     }
 )
@@ -72,6 +74,9 @@ async def get_async_database_session() -> AsyncGenerator[AsyncSession, None]:
     
     Handles connection failures gracefully during session cleanup to prevent
     cascading errors when database connections are lost.
+    
+    IMPORTANT: This dependency automatically commits on success and rolls back on error.
+    Endpoints using this should not manually commit unless they need fine-grained control.
     """
     session = None
     try:
@@ -79,6 +84,11 @@ async def get_async_database_session() -> AsyncGenerator[AsyncSession, None]:
         # Test the connection before yielding
         await session.execute(text("SELECT 1"))
         yield session
+        
+        # Auto-commit if transaction is still active and no exception occurred
+        if session.in_transaction():
+            await session.commit()
+            
     except Exception as e:
         # Don't log HTTPExceptions as database errors - they're application logic
         from fastapi import HTTPException
@@ -86,7 +96,8 @@ async def get_async_database_session() -> AsyncGenerator[AsyncSession, None]:
             # HTTPException should propagate normally, just clean up the session
             if session:
                 try:
-                    await session.rollback()
+                    if session.in_transaction():
+                        await session.rollback()
                 except (DBAPIError, DisconnectionError):
                     # Connection issues during rollback are expected and OK
                     pass
@@ -98,7 +109,8 @@ async def get_async_database_session() -> AsyncGenerator[AsyncSession, None]:
             logger.error(f"Async database session error: {e}", exc_info=True)
             if session:
                 try:
-                    await session.rollback()
+                    if session.in_transaction():
+                        await session.rollback()
                 except (DBAPIError, DisconnectionError) as rollback_error:
                     # Connection was lost during rollback - this is expected in some scenarios
                     logger.warning(f"Failed to rollback transaction due to connection loss: {rollback_error}")

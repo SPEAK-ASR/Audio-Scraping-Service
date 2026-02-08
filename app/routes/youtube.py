@@ -295,12 +295,14 @@ async def transcribe_audio_clips(
 
 
 @router.post("/save-clips", response_model=CloudStorageResponse)
-async def save_clips_to_cloud_and_database(
-    request: CloudStorageRequest,
-    db: AsyncSession = Depends(get_async_database_session)
-):
+async def save_clips_to_cloud_and_database(request: CloudStorageRequest):
     """
     Step 3: Save processed clips to cloud storage and add data to database.
+    
+    OPTIMIZED FOR CONCURRENT PROCESSING:
+    - Phase 1: Upload files to cloud WITHOUT holding database connection
+    - Phase 2: Acquire database connection ONLY for quick inserts
+    - This prevents connection pool exhaustion during slow file uploads
     
     This endpoint uses:
     - Batch concurrent uploads for cloud storage (faster)
@@ -309,7 +311,6 @@ async def save_clips_to_cloud_and_database(
     
     Args:
         request: Video ID, clip names, and storage/database options
-        db: Database session
         
     Returns:
         Results of cloud storage and database operations
@@ -460,88 +461,93 @@ async def save_clips_to_cloud_and_database(
         
         # ============================================================
         # PHASE 2: Database operations with transaction (atomicity)
+        # IMPORTANT: Database connection is acquired HERE, not at function start
+        # This prevents holding connections open during slow file uploads
         # ============================================================
         if request.add_to_transcription_service:
-            try:
-                # Get clips that were successfully uploaded (or all clips if not uploading to cloud)
-                clips_to_save = [
-                    cf for cf in clip_files 
-                    if cf.name not in failed_clips
-                ]
-                
-                logger.info(f"Starting database transaction for {len(clips_to_save)} clips")
-                
-                # First, get or create the YouTube video record
-                existing_video = await DatabaseService.check_video_exists(db, request.video_id)
-                if not existing_video and video_metadata:
-                    logger.info(f"Creating new video record for {request.video_id}")
-                    existing_video = await DatabaseService.save_video_metadata(db, video_metadata)
-                elif not existing_video:
-                    logger.warning(f"No video metadata available for {request.video_id}")
-                    # Create minimal fallback record
-                    fallback_metadata = {
-                        'video_id': request.video_id,
-                        'title': f'Video {request.video_id}',
-                        'url': f'https://youtube.com/watch?v={request.video_id}'
-                    }
-                    existing_video = await DatabaseService.save_video_metadata(db, fallback_metadata)
-                
-                # Save all audio clips within the same transaction context
-                # Note: We're NOT committing after each clip - we batch them
-                for clip_file in clips_to_save:
-                    try:
-                        # Get transcription if available
-                        transcription = transcriptions.get(clip_file.name, None)
-                        
-                        # Get clip data from metadata or create defaults
-                        clip_data = clip_metadata.get(clip_file.name, {
-                            'clip_name': clip_file.name,
-                            'start_time': 0,
-                            'end_time': 0,
-                            'duration': 0,
-                            'padded_duration': 0
-                        })
-                        
-                        # Ensure clip_name is set
-                        clip_data['clip_name'] = clip_file.name
-                        
-                        # Create Audio record (but don't commit yet - batched transaction)
-                        audio_record = await DatabaseService.save_audio_clip_no_commit(
-                            db=db,
-                            clip_data=clip_data,
-                            youtube_video_id=existing_video.id,
-                            transcription=transcription
-                        )
-                        
-                        processed_clips.append({
-                            "clip_name": clip_file.name,
-                            "cloud_url": cloud_urls.get(clip_file.name),
-                            "database_id": str(audio_record.audio_id)
-                        })
-                        
-                    except Exception as e:
-                        logger.error(f"Failed to prepare database record for {clip_file.name}: {e}")
-                        raise  # Re-raise to trigger transaction rollback
-                
-                # Commit all database operations at once (atomic)
-                await db.commit()
-                logger.info(f"Database transaction committed successfully for {len(processed_clips)} clips")
-                
-            except Exception as db_error:
-                # Rollback database transaction
-                await db.rollback()
-                logger.error(f"Database transaction failed, rolling back: {db_error}")
-                
-                # Rollback cloud uploads if database failed
-                if uploaded_blob_names:
-                    logger.info(f"Rolling back {len(uploaded_blob_names)} cloud uploads due to database failure")
-                    rollback_result = get_cloud_storage_service().delete_files_batch(uploaded_blob_names)
-                    logger.info(f"Rollback complete: {len(rollback_result['successful'])} deleted, {len(rollback_result['failed'])} failed to delete")
-                
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Database operation failed (uploads rolled back): {str(db_error)}"
-                )
+            # Acquire database session ONLY when actually saving to database
+            from app.core.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as db:
+                try:
+                    # Get clips that were successfully uploaded (or all clips if not uploading to cloud)
+                    clips_to_save = [
+                        cf for cf in clip_files 
+                        if cf.name not in failed_clips
+                    ]
+                    
+                    logger.info(f"Starting database transaction for {len(clips_to_save)} clips")
+                    
+                    # First, get or create the YouTube video record
+                    existing_video = await DatabaseService.check_video_exists(db, request.video_id)
+                    if not existing_video and video_metadata:
+                        logger.info(f"Creating new video record for {request.video_id}")
+                        existing_video = await DatabaseService.save_video_metadata(db, video_metadata)
+                    elif not existing_video:
+                        logger.warning(f"No video metadata available for {request.video_id}")
+                        # Create minimal fallback record
+                        fallback_metadata = {
+                            'video_id': request.video_id,
+                            'title': f'Video {request.video_id}',
+                            'url': f'https://youtube.com/watch?v={request.video_id}'
+                        }
+                        existing_video = await DatabaseService.save_video_metadata(db, fallback_metadata)
+                    
+                    # Save all audio clips within the same transaction context
+                    # Note: We're NOT committing after each clip - we batch them
+                    for clip_file in clips_to_save:
+                        try:
+                            # Get transcription if available
+                            transcription = transcriptions.get(clip_file.name, None)
+                            
+                            # Get clip data from metadata or create defaults
+                            clip_data = clip_metadata.get(clip_file.name, {
+                                'clip_name': clip_file.name,
+                                'start_time': 0,
+                                'end_time': 0,
+                                'duration': 0,
+                                'padded_duration': 0
+                            })
+                            
+                            # Ensure clip_name is set
+                            clip_data['clip_name'] = clip_file.name
+                            
+                            # Create Audio record (but don't commit yet - batched transaction)
+                            audio_record = await DatabaseService.save_audio_clip_no_commit(
+                                db=db,
+                                clip_data=clip_data,
+                                youtube_video_id=existing_video.id,
+                                transcription=transcription
+                            )
+                            
+                            processed_clips.append({
+                                "clip_name": clip_file.name,
+                                "cloud_url": cloud_urls.get(clip_file.name),
+                                "database_id": str(audio_record.audio_id)
+                            })
+                            
+                        except Exception as e:
+                            logger.error(f"Failed to prepare database record for {clip_file.name}: {e}")
+                            raise  # Re-raise to trigger transaction rollback
+                    
+                    # Commit all database operations at once (atomic)
+                    await db.commit()
+                    logger.info(f"Database transaction committed successfully for {len(processed_clips)} clips")
+                    
+                except Exception as db_error:
+                    # Rollback database transaction
+                    await db.rollback()
+                    logger.error(f"Database transaction failed, rolling back: {db_error}")
+                    
+                    # Rollback cloud uploads if database failed
+                    if uploaded_blob_names:
+                        logger.info(f"Rolling back {len(uploaded_blob_names)} cloud uploads due to database failure")
+                        rollback_result = get_cloud_storage_service().delete_files_batch(uploaded_blob_names)
+                        logger.info(f"Rollback complete: {len(rollback_result['successful'])} deleted, {len(rollback_result['failed'])} failed to delete")
+                    
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Database operation failed (uploads rolled back): {str(db_error)}"
+                    )
         else:
             # No database operations - just add cloud URLs to processed clips
             for clip_file in clip_files:

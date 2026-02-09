@@ -37,14 +37,16 @@ ASYNC_DATABASE_URL = settings.DATABASE_URL.replace(
 )
 
 # Create async database engine with connection pooling
-# Pool sized for concurrent video processing (5 videos × ~2-3 connections each + overhead)
+# Pool sized for concurrent video processing with transcription workloads
+# Transcription of 287 clips in batches of 5 = ~60 concurrent operations
+# Each operation may need 1-2 connections
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
     echo=settings.DEBUG,
     poolclass=QueuePool,
-    pool_size=15,         # Base pool: 5 concurrent videos × 2 connections + 5 overhead
-    max_overflow=25,      # Burst capacity (total 40 connections)
-    pool_timeout=60,      # Wait up to 60s for a connection (increased for concurrent load)
+    pool_size=30,         # Increased base pool for heavy concurrent transcription
+    max_overflow=30,      # Burst capacity (total 60 connections)
+    pool_timeout=120,     # Increased timeout to 120s for heavy concurrent load
     pool_pre_ping=True,   # Verify connections before use
     pool_recycle=3600,    # Recycle connections every hour
     connect_args={
@@ -80,8 +82,12 @@ async def get_async_database_session() -> AsyncGenerator[AsyncSession, None]:
     """
     session = None
     try:
-        session = AsyncSessionLocal()
-        # Test the connection before yielding
+        session = AsyncSessionLocal()        
+        # Log pool status for monitoring (only in debug mode to avoid overhead)
+        if settings.DEBUG:
+            pool = async_engine.pool
+            logger.debug(f"DB Session acquired - Pool status: {pool.checkedout()}/{pool.size() + pool.overflow()} connections in use")
+                # Test the connection before yielding
         await session.execute(text("SELECT 1"))
         yield session
         
@@ -181,13 +187,29 @@ async def health_check() -> bool:
     """
     Perform a database health check.
     
+    Uses a lightweight session from the pool with a short timeout to avoid
+    exhausting the pool during heavy operations. If pool is exhausted,
+    returns False instead of blocking.
+    
     Returns:
         bool: True if database is healthy, False otherwise
     """
+    session = None
     try:
-        async with async_engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-            return True
+        # Use a session with a very short timeout for health checks
+        # This prevents health checks from blocking during heavy load
+        session = AsyncSessionLocal()
+        result = await asyncio.wait_for(
+            session.execute(text("SELECT 1")),
+            timeout=5.0  # 5 second timeout for health checks
+        )
+        return True
+    except asyncio.TimeoutError:
+        logger.warning("Database health check timed out (pool may be under heavy load)")
+        return False
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         return False
+    finally:
+        if session:
+            await _safe_session_close(session)

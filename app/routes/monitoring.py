@@ -84,6 +84,61 @@ async def get_pool_status() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Failed to get pool status: {str(e)}")
 
 
+@router.get("/pool-diagnostics")
+async def get_pool_diagnostics() -> Dict[str, Any]:
+    """
+    Get detailed pool diagnostics for troubleshooting connection issues.
+    
+    Returns comprehensive pool metrics including:
+    - Pool configuration
+    - Current usage statistics
+    - Connection lifecycle metrics
+    - Health status and recommendations
+    """
+    try:
+        pool = async_engine.pool
+        
+        # Get basic pool metrics
+        pool_status = {
+            "size": pool.size(),
+            "checked_out": pool.checkedout(),
+            "overflow": pool.overflow(),
+            "configured_pool_size": getattr(pool, "pool_size", None),
+            "configured_max_overflow": getattr(pool, "max_overflow", None),
+            "pool_timeout": getattr(pool, "timeout", None),
+        }
+        
+        # Calculate utilization
+        max_connections = pool_status["configured_pool_size"] + pool_status["configured_max_overflow"]
+        utilization = (pool_status["checked_out"] / max_connections * 100) if max_connections else 0
+        
+        # Determine health status
+        if utilization < 60:
+            health = "healthy"
+            recommendation = "Pool is operating normally"
+        elif utilization < 80:
+            health = "warning"
+            recommendation = "Pool utilization is high - monitor for potential issues"
+        elif utilization < 95:
+            health = "critical"
+            recommendation = "Pool near exhaustion - investigate connection leaks or increase pool size"
+        else:
+            health = "exhausted"
+            recommendation = "Pool exhausted - immediate action required"
+        
+        return {
+            "pool_status": pool_status,
+            "utilization_percent": round(utilization, 2),
+            "health": health,
+            "recommendation": recommendation,
+            "max_connections": max_connections
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get pool diagnostics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get pool diagnostics: {str(e)}")
+
+
 @router.get("/active-connections")
 async def get_active_connections() -> Dict[str, Any]:
     """

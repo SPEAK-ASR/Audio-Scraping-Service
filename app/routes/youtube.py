@@ -467,14 +467,17 @@ async def save_clips_to_cloud_and_database(request: CloudStorageRequest):
         if request.add_to_transcription_service:
             # Acquire database session ONLY when actually saving to database
             from app.core.database import AsyncSessionLocal
+            
+            # Get clips that were successfully uploaded (or all clips if not uploading to cloud)
+            clips_to_save = [
+                cf for cf in clip_files 
+                if cf.name not in failed_clips
+            ]
+            
+            logger.info(f"Acquiring database connection for {len(clips_to_save)} clips (pool-aware operation)")
+            
             async with AsyncSessionLocal() as db:
                 try:
-                    # Get clips that were successfully uploaded (or all clips if not uploading to cloud)
-                    clips_to_save = [
-                        cf for cf in clip_files 
-                        if cf.name not in failed_clips
-                    ]
-                    
                     logger.info(f"Starting database transaction for {len(clips_to_save)} clips")
                     
                     # First, get or create the YouTube video record
@@ -548,6 +551,9 @@ async def save_clips_to_cloud_and_database(request: CloudStorageRequest):
                         status_code=500,
                         detail=f"Database operation failed (uploads rolled back): {str(db_error)}"
                     )
+            
+            # Database session closed - connection returned to pool
+            logger.info("Database connection released back to pool")
         else:
             # No database operations - just add cloud URLs to processed clips
             for clip_file in clip_files:

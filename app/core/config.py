@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     MIN_CLIP_DURATION: float = 4.0  # Minimum clip duration in seconds
     MAX_CLIP_DURATION: float = 10.0  # Maximum clip duration in seconds
     
+    # Concurrency configuration
+    MAX_CONCURRENT_VIDEO_PROCESSING: int = 5  # Max parallel video processing
+    
     # CORS settings
     ALLOWED_HOSTS: List[str] = ["*"]  # Deprecated, use ALLOWED_ORIGINS
     ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "*")

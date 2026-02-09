@@ -89,7 +89,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(youtube_router)
     app.include_router(statistics_router)
-    app.include_router(monitoring_router)  # Monitoring endpoints for diagnostics
+    if settings.DEBUG:
+        app.include_router(monitoring_router)  # Monitoring endpoints for diagnostics
     app.include_router(channels_router,
         prefix="/api"
     )

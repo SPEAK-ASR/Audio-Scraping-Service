@@ -42,7 +42,6 @@ class Settings(BaseSettings):
     
     # Concurrency configuration
     MAX_CONCURRENT_VIDEO_PROCESSING: int = 5  # Max parallel video processing
-    MAX_CONCURRENT_DB_OPERATIONS: int = 8     # Max concurrent database operations
     
     # CORS settings
     ALLOWED_HOSTS: List[str] = ["*"]  # Deprecated, use ALLOWED_ORIGINS

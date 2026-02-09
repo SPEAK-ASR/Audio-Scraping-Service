@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     # Audio processing configuration
     MIN_CLIP_DURATION: float = 5.0  # Minimum clip duration in seconds
     MAX_CLIP_DURATION: float = 25.0  # Maximum clip duration in seconds
+    VAD_THRESHOLD_STEP: float = 0.15  # Threshold increase per retry for large segments
+    VAD_THRESHOLD_CEILING: float = 0.90  # Max threshold before giving up on splitting
     
     # CORS settings
     ALLOWED_HOSTS: List[str] = ["*"]  # Deprecated, use ALLOWED_ORIGINS

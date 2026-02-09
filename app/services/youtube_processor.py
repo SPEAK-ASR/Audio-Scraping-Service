@@ -411,7 +411,141 @@ class YouTubeProcessor:
             final_count = chosen['count']
 
             return final_start, final_end, final_duration, final_count
-        
+
+    def split_large_segment(self, wav, segment_start: float, segment_end: float,
+                            original_threshold: float, clip_counter: int,
+                            merged_durations: List[float], MIN_DUR: float,
+                            MAX_DUR: float, DESIRED_MEAN: float) -> Tuple[List[Dict[str, Any]], int]:
+        """
+        Attempt to split a large segment (> MAX_DUR) by re-running VAD with
+        progressively increased (stricter) thresholds on the segment's audio slice.
+
+        Returns:
+            A tuple of (list of clip dicts, updated clip_counter).
+        """
+        segment_duration = segment_end - segment_start
+        result_clips = []
+
+        # Extract audio slice for this segment
+        sample_rate = 16000
+        start_sample = int(segment_start * sample_rate)
+        end_sample = int(segment_end * sample_rate)
+        wav_slice = wav[start_sample:end_sample]
+
+        threshold_step = settings.VAD_THRESHOLD_STEP
+        threshold_ceiling = settings.VAD_THRESHOLD_CEILING
+        current_threshold = original_threshold + threshold_step
+
+        while current_threshold <= threshold_ceiling:
+            logger.info(
+                f"  Attempting to split large segment "
+                f"({segment_start:.2f}s-{segment_end:.2f}s, {segment_duration:.2f}s) "
+                f"with threshold={current_threshold:.2f}"
+            )
+
+            sub_timestamps = get_speech_timestamps(
+                wav_slice,
+                self.vad_model,
+                threshold=current_threshold,
+                sampling_rate=sample_rate,
+                return_seconds=True,
+            )
+
+            if not sub_timestamps:
+                logger.info(
+                    f"    No speech detected at threshold={current_threshold:.2f}, "
+                    f"trying higher threshold"
+                )
+                current_threshold += threshold_step
+                continue
+
+            # Convert to absolute timestamps (offset by segment start)
+            sub_segments = [
+                (s['start'] + segment_start, s['end'] + segment_start)
+                for s in sub_timestamps
+            ]
+
+            # Process sub-segments mirroring the main loop logic
+            valid_clips = []
+            si = 0
+
+            while si < len(sub_segments):
+                ss, se = sub_segments[si]
+                sd = se - ss
+
+                if MIN_DUR <= sd <= MAX_DUR:
+                    # Valid sub-segment
+                    valid_clips.append({
+                        'clip_number': None,
+                        'final_start': ss,
+                        'final_end': se,
+                        'final_duration': sd
+                    })
+                    si += 1
+
+                elif sd < MIN_DUR:
+                    # Small sub-segment - try to merge consecutive small ones
+                    consecutive_small = 1
+                    sj = si + 1
+                    while sj < len(sub_segments) and (sub_segments[sj][1] - sub_segments[sj][0]) < MIN_DUR:
+                        consecutive_small += 1
+                        sj += 1
+
+                    if consecutive_small >= 2:
+                        final_start, final_end, final_duration, used_count = \
+                            self.merge_consecutive_small_segments(
+                                sub_segments, si, MIN_DUR, MAX_DUR,
+                                DESIRED_MEAN, merged_durations
+                            )
+                        if MIN_DUR <= final_duration <= MAX_DUR:
+                            merged_durations.append(final_duration)
+                            valid_clips.append({
+                                'clip_number': None,
+                                'final_start': final_start,
+                                'final_end': final_end,
+                                'final_duration': final_duration
+                            })
+                        si += used_count
+                    else:
+                        # Single small sub-segment, skip
+                        si += 1
+
+                else:
+                    # Still too large, skip (don't recurse)
+                    logger.info(
+                        f"    Sub-segment {ss:.2f}s-{se:.2f}s ({sd:.2f}s) "
+                        f"still exceeds MAX_DUR, skipping"
+                    )
+                    si += 1
+
+            if valid_clips:
+                # Sort by start time and assign clip numbers
+                valid_clips.sort(key=lambda c: c['final_start'])
+                for clip in valid_clips:
+                    clip['clip_number'] = clip_counter
+                    clip_counter += 1
+                result_clips.extend(valid_clips)
+
+                logger.info(
+                    f"    Successfully split large segment into "
+                    f"{len(valid_clips)} valid clips at threshold={current_threshold:.2f}"
+                )
+                return result_clips, clip_counter
+
+            logger.info(
+                f"    Threshold {current_threshold:.2f} produced no valid clips, "
+                f"increasing threshold"
+            )
+            current_threshold += threshold_step
+
+        # All threshold attempts exhausted
+        logger.warning(
+            f"  Could not split large segment "
+            f"({segment_start:.2f}s-{segment_end:.2f}s, {segment_duration:.2f}s) "
+            f"- skipping"
+        )
+        return [], clip_counter
+
     def split_with_vad(self, input_file: str, output_dir: Path, video_id: str,
                     threshold: float = 0.5, start_padding: float = 1.0,
                     end_padding: float = 0.5) -> List[Dict[str, Any]]:
@@ -537,12 +671,35 @@ class YouTubeProcessor:
                         )
                         i += 1
 
-                # Case 3: Large segment
+                # Case 3: Large segment - attempt to split with higher thresholds
                 else:
                     logger.info(
                         f"Segment {i}: {segment_start:.2f}s-{segment_end:.2f}s "
-                        f"(duration: {segment_duration:.2f}s) - LARGE, skipping (duration > MAX_DUR)"
+                        f"(duration: {segment_duration:.2f}s) - LARGE, attempting split"
                     )
+
+                    split_clips, clip_counter = self.split_large_segment(
+                        wav=wav,
+                        segment_start=segment_start,
+                        segment_end=segment_end,
+                        original_threshold=threshold,
+                        clip_counter=clip_counter,
+                        merged_durations=merged_durations,
+                        MIN_DUR=MIN_DUR,
+                        MAX_DUR=MAX_DUR,
+                        DESIRED_MEAN=DESIRED_MEAN
+                    )
+
+                    if split_clips:
+                        clips_to_extract.extend(split_clips)
+                        logger.info(
+                            f"  Split large segment into {len(split_clips)} clips"
+                        )
+                    else:
+                        logger.info(
+                            f"  Could not split large segment, skipping"
+                        )
+
                     i += 1
             
             # Second pass: Extract clips in parallel for faster processing

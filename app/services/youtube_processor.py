@@ -9,7 +9,6 @@ import os
 import json
 import re
 import contextlib
-import collections
 import wave
 import subprocess
 import tempfile
@@ -18,8 +17,9 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Any
 from concurrent.futures import ThreadPoolExecutor
 
+import torch
 import yt_dlp
-import webrtcvad
+from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
 from app.utils import get_logger
 from app.core.config import settings
 from pydub import AudioSegment
@@ -33,15 +33,6 @@ logger = get_logger(__name__)
 _clip_extraction_executor = ThreadPoolExecutor(max_workers=4)
 
 
-class Frame:
-    """Represents a single audio frame for VAD processing."""
-    
-    def __init__(self, bytes_data, timestamp, duration):
-        self.bytes = bytes_data
-        self.timestamp = timestamp
-        self.duration = duration
-
-
 class YouTubeProcessor:
     """Service for processing YouTube videos into audio clips."""
     
@@ -49,6 +40,7 @@ class YouTubeProcessor:
         self.temp_files = []
         self._check_dependencies()
         self.model, self.df_state, _ = init_df()
+        self.vad_model = load_silero_vad()
     
     def _check_dependencies(self) -> None:
         """Check if required dependencies (FFmpeg) are available."""
@@ -309,59 +301,8 @@ class YouTubeProcessor:
             logger.info("Cleaned up temporary raw audio file")
         
         return metadata
-    
-    def frame_generator(self, frame_duration_ms: int, audio: bytes, sample_rate: int):
-        """Generate audio frames for VAD processing."""
-        n = int(sample_rate * (frame_duration_ms / 1000.0) * 2)
-        offset = 0
-        timestamp = 0.0
-        duration = (float(n) / sample_rate) / 2.0
-        
-        while offset + n <= len(audio):
-            yield Frame(audio[offset:offset + n], timestamp, duration)
-            timestamp += duration
-            offset += n
-    
-    def vad_collector(self, sample_rate: int, frame_duration_ms: int, 
-                     padding_duration_ms: int, vad: webrtcvad.Vad, frames) -> List[Tuple[float, float]]:
-        """Collect voice activity segments from audio frames."""
-        num_padding_frames = int(padding_duration_ms / frame_duration_ms)
-        ring_buffer = collections.deque(maxlen=num_padding_frames)
-        triggered = False
-        voiced_frames = []
-        segments = []
-        
-        for frame in frames:
-            is_speech = vad.is_speech(frame.bytes, sample_rate)
-            
-            if not triggered:
-                ring_buffer.append((frame, is_speech))
-                num_voiced = len([f for f, speech in ring_buffer if speech])
-                if num_voiced > 0.9 * ring_buffer.maxlen:
-                    triggered = True
-                    for f, s in ring_buffer:
-                        voiced_frames.append(f)
-                    ring_buffer.clear()
-            else:
-                voiced_frames.append(frame)
-                ring_buffer.append((frame, is_speech))
-                num_unvoiced = len([f for f, speech in ring_buffer if not speech])
-                if num_unvoiced > 0.9 * ring_buffer.maxlen:
-                    triggered = False
-                    segment_start = voiced_frames[0].timestamp
-                    segment_end = voiced_frames[-1].timestamp + voiced_frames[-1].duration
-                    segments.append((segment_start, segment_end))
-                    ring_buffer.clear()
-                    voiced_frames = []
-        
-        if voiced_frames:
-            segment_start = voiced_frames[0].timestamp
-            segment_end = voiced_frames[-1].timestamp + voiced_frames[-1].duration
-            segments.append((segment_start, segment_end))
-        
-        return segments
-    
-    
+
+
     def merge_consecutive_small_segments(self, segments: List[Tuple[float, float]], start_index: int,
                                          MIN_DUR: float, MAX_DUR: float, DESIRED_MEAN: float,
                                          merged_durations: List[float]) -> Tuple[float, float, float, int]:
@@ -472,21 +413,28 @@ class YouTubeProcessor:
             return final_start, final_end, final_duration, final_count
         
     def split_with_vad(self, input_file: str, output_dir: Path, video_id: str,
-                    aggressiveness: int = 3, start_padding: float = 1.0, 
+                    threshold: float = 0.5, start_padding: float = 1.0,
                     end_padding: float = 0.5) -> List[Dict[str, Any]]:
             """Split audio file using Voice Activity Detection."""
+            # Read audio for VAD using silero-vad
+            wav = read_audio(input_file)
+            speech_timestamps = get_speech_timestamps(
+                wav,
+                self.vad_model,
+                threshold=threshold,
+                sampling_rate=16000,
+                return_seconds=True,
+            )
+            segments = [(s['start'], s['end']) for s in speech_timestamps]
+
+            # Read PCM data for clip extraction
             with contextlib.closing(wave.open(input_file, 'rb')) as wf:
                 num_channels = wf.getnchannels()
                 assert num_channels == 1
                 sample_width = wf.getsampwidth()
                 assert sample_width == 2
                 sample_rate = wf.getframerate()
-                assert sample_rate in (8000, 16000, 32000, 48000)
                 pcm_data = wf.readframes(wf.getnframes())
-            
-            vad = webrtcvad.Vad(aggressiveness)
-            frames = list(self.frame_generator(30, pcm_data, sample_rate))
-            segments = self.vad_collector(sample_rate, 30, 300, vad, frames)
             
             # Create output directory with base directory structure
             clips_output_dir = output_dir / "output" / video_id
@@ -714,8 +662,8 @@ class YouTubeProcessor:
         return clips_data
 
 
-    async def process_video(self, url: str, output_dir: Path, 
-                          vad_aggressiveness: int = 3, start_padding: float = 1.0, 
+    async def process_video(self, url: str, output_dir: Path,
+                          vad_threshold: float = 0.5, start_padding: float = 1.0,
                           end_padding: float = 0.5) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """Process a YouTube video: download and split into clips."""
         video_id = self.extract_video_id(url)
@@ -744,7 +692,7 @@ class YouTubeProcessor:
                     input_file=temp_audio_path,
                     output_dir=output_dir,
                     video_id=video_id,
-                    aggressiveness=vad_aggressiveness,
+                    threshold=vad_threshold,
                     start_padding=start_padding,
                     end_padding=end_padding
                 )
@@ -762,7 +710,7 @@ class YouTubeProcessor:
         output_dir: Path,
         db_session,  # AsyncSession
         check_existing: bool = True,
-        vad_aggressiveness: int = 3, 
+        vad_threshold: float = 0.5,
         start_padding: float = 1.0, 
         end_padding: float = 0.5
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], bool]:
@@ -774,7 +722,7 @@ class YouTubeProcessor:
             output_dir: Directory to save clips
             db_session: Database session
             check_existing: Whether to check if video already exists
-            vad_aggressiveness: VAD aggressiveness level
+            vad_threshold: VAD speech probability threshold
             start_padding: Start padding in seconds
             end_padding: End padding in seconds
             
@@ -824,7 +772,7 @@ class YouTubeProcessor:
         metadata, clips_data = await self.process_video(
             url=url,
             output_dir=output_dir,
-            vad_aggressiveness=vad_aggressiveness,
+            vad_threshold=vad_threshold,
             start_padding=start_padding,
             end_padding=end_padding
         )

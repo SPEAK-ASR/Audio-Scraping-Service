@@ -78,7 +78,7 @@ async def split_youtube_audio(
         logger.info(f"Starting audio splitting for YouTube video", extra={
             "url": str(request.youtube_url),
             "domain": request.domain,
-            "vad_aggressiveness": request.vad_aggressiveness,
+            "vad_threshold": request.vad_threshold,
             "start_padding": request.start_padding,
             "end_padding": request.end_padding
         })
@@ -117,7 +117,7 @@ async def split_youtube_audio(
         video_metadata, clips_data = await get_youtube_processor().process_video(
             url=str(request.youtube_url),
             output_dir=base_dir,
-            vad_aggressiveness=request.vad_aggressiveness,
+            vad_threshold=request.vad_threshold,
             start_padding=request.start_padding,
             end_padding=request.end_padding
         )

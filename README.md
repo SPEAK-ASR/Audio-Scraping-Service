@@ -75,7 +75,7 @@ Process a YouTube video with the following options:
   "get_google_transcription": false,
   "upload_to_cloud_bucket": false,
   "add_to_transcription_service": false,
-  "vad_aggressiveness": 2,
+  "vad_threshold": 0.5,
   "start_padding": 1.0,
   "end_padding": 0.5
 }

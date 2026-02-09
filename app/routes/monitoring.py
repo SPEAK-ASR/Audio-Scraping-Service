@@ -32,21 +32,51 @@ async def get_pool_status() -> Dict[str, Any]:
     """
     try:
         pool = async_engine.pool
-        
-        # Get pool statistics
+
+        # Current pool statistics
+        current_pool_size = pool.size()
+        checked_out = pool.checkedout()
+        overflow = pool.overflow()
+        total_connections = current_pool_size + overflow
+
+        # Configured limits from the pool's public attributes, if available
+        configured_pool_size = getattr(pool, "pool_size", None)
+        configured_max_overflow = getattr(pool, "max_overflow", None)
+        max_possible_connections = (
+            configured_pool_size + configured_max_overflow
+            if configured_pool_size is not None and configured_max_overflow is not None
+            else None
+        )
+
+        # Derive a status based on utilization if we know the configured maximum
+        if max_possible_connections and max_possible_connections > 0:
+            usage_ratio = checked_out / max_possible_connections
+            if usage_ratio < 0.75:
+                status = "healthy"
+            elif usage_ratio < 0.9:
+                status = "warning"
+            else:
+                status = "critical"
+        else:
+            status = "unknown"
+
+        # Assemble pool status payload
         pool_status = {
-            "pool_size": pool.size(),
-            "checked_out": pool.checkedout(),
-            "overflow": pool.overflow(),
-            "total_connections": pool.size() + pool.overflow(),
-            "configured_pool_size": async_engine.pool._pool.maxsize if hasattr(async_engine.pool, '_pool') else 15,
-            "configured_max_overflow": async_engine.pool._max_overflow if hasattr(async_engine.pool, '_max_overflow') else 25,
-            "max_possible_connections": 40,  # pool_size (15) + max_overflow (25)
-            "status": "healthy" if pool.checkedout() < 30 else "warning" if pool.checkedout() < 35 else "critical"
+            "pool_size": current_pool_size,
+            "checked_out": checked_out,
+            "overflow": overflow,
+            "total_connections": total_connections,
+            "configured_pool_size": configured_pool_size,
+            "configured_max_overflow": configured_max_overflow,
+            "max_possible_connections": max_possible_connections,
+            "status": status,
         }
-        
-        logger.info(f"Pool status check: {pool_status['checked_out']}/{pool_status['max_possible_connections']} connections in use")
-        
+
+        logger.info(
+            "Pool status check: %s/%s connections in use",
+            checked_out,
+            max_possible_connections if max_possible_connections is not None else "unknown",
+        )
         return pool_status
         
     except Exception as e:

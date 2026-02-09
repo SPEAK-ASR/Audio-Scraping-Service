@@ -265,22 +265,9 @@ class StatisticsService:
         """
         try:
             # Define fine-grained duration ranges (0.5s intervals)
-            ranges = [
-                (0, 5.5, '0-5.5s'),
-                (5.5, 6.0, '5.5-6.0s'),
-                (6.0, 6.5, '6.0-6.5s'),
-                (6.5, 7.0, '6.5-7.0s'),
-                (7.0, 7.5, '7.0-7.5s'),
-                (7.5, 8.0, '7.5-8.0s'),
-                (8.0, 8.5, '8.0-8.5s'),
-                (8.5, 9.0, '8.5-9.0s'),
-                (9.0, 9.5, '9.0-9.5s'),
-                (9.5, 10.0, '9.5-10.0s'),
-                (10.0, 10.5, '10.0-10.5s'),
-                (10.5, 11.0, '10.5-11.0s'),
-                (11.0, 11.5, '11.0-11.5s'),
-                (11.5, float('inf'), '11.5s+')
-            ]
+            ranges = [(0, 5, '0-5s')]
+            ranges.extend((x, x+1, f'{x}-{x+1}s') for x in range(5, 25))
+            ranges.append((25, 30, '25-30s'))
             
             # Get total count for percentage calculation
             total_count_query = select(func.count(Audio.audio_id)).where(Audio.padded_duration.isnot(None))
@@ -291,33 +278,19 @@ class StatisticsService:
             
             for min_dur, max_dur, range_label in ranges:
                 # Query for clips in this range
-                if max_dur == float('inf'):
-                    query = (
-                        select(
-                            func.count(Audio.audio_id).label('count'),
-                            func.coalesce(func.sum(Audio.padded_duration), 0).label('total_duration')
-                        )
-                        .where(
-                            and_(
-                                Audio.padded_duration.isnot(None),
-                                Audio.padded_duration >= min_dur
-                            )
+                query = (
+                    select(
+                        func.count(Audio.audio_id).label('count'),
+                        func.coalesce(func.sum(Audio.padded_duration), 0).label('total_duration')
+                    )
+                    .where(
+                        and_(
+                            Audio.padded_duration.isnot(None),
+                            Audio.padded_duration >= min_dur,
+                            Audio.padded_duration < max_dur
                         )
                     )
-                else:
-                    query = (
-                        select(
-                            func.count(Audio.audio_id).label('count'),
-                            func.coalesce(func.sum(Audio.padded_duration), 0).label('total_duration')
-                        )
-                        .where(
-                            and_(
-                                Audio.padded_duration.isnot(None),
-                                Audio.padded_duration >= min_dur,
-                                Audio.padded_duration < max_dur
-                            )
-                        )
-                    )
+                )
                 
                 result = await db.execute(query)
                 row = result.first()

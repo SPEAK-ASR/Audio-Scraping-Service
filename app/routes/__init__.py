@@ -10,5 +10,6 @@ from .statistics import router as statistics_router
 from .channels import router as channels_router
 from .playlists import router as playlist_router
 from .monitoring import router as monitoring_router
+from .videos import router as videos_router
 
-__all__ = ["youtube_router", "health_router", "statistics_router", "channels_router", "playlist_router", "monitoring_router"]
+__all__ = ["youtube_router", "health_router", "statistics_router", "channels_router", "playlist_router", "monitoring_router", "videos_router"]

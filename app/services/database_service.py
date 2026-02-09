@@ -5,7 +5,7 @@ Database service for managing YouTube videos and audio clips.
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, delete
 from sqlalchemy.exc import IntegrityError
 
 from app.models.youtube_video import YouTubeVideo
@@ -334,3 +334,144 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Error getting video audio clips: {e}")
             raise
+    
+    @staticmethod
+    async def get_videos_with_low_clips(
+        db: AsyncSession, 
+        min_num_clips: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all videos that have less than min_num clips and have 0 transcription count.
+        
+        Args:
+            db: Database session
+            min_num_clips: Minimum number of clips threshold
+            
+        Returns:
+            List of video metadata dictionaries with clip counts
+        """
+        try:
+            # Query to get videos with clip count less than min_num 
+            # and all their clips have transcription_count = 0
+            from sqlalchemy import outerjoin
+            
+            # Subquery to count clips per video
+            clip_count_subquery = (
+                select(
+                    Audio.youtube_video_id,
+                    func.count(Audio.audio_id).label('clip_count'),
+                    func.sum(Audio.transcription_count).label('total_transcription_count')
+                )
+                .group_by(Audio.youtube_video_id)
+                .subquery()
+            )
+            
+            # Main query to get videos matching criteria
+            stmt = (
+                select(
+                    YouTubeVideo,
+                    func.coalesce(clip_count_subquery.c.clip_count, 0).label('num_clips'),
+                    func.coalesce(clip_count_subquery.c.total_transcription_count, 0).label('total_trans_count')
+                )
+                .outerjoin(clip_count_subquery, YouTubeVideo.id == clip_count_subquery.c.youtube_video_id)
+                .where(
+                    func.coalesce(clip_count_subquery.c.clip_count, 0) < min_num_clips
+                )
+                .where(
+                    func.coalesce(clip_count_subquery.c.total_transcription_count, 0) == 0
+                )
+            )
+            
+            result = await db.execute(stmt)
+            rows = result.all()
+            
+            # Format results
+            videos = []
+            for row in rows:
+                video = row[0]  # YouTubeVideo object
+                num_clips = row[1]  # clip count
+                
+                videos.append({
+                    'video_id': video.video_id,
+                    'num_of_clips': num_clips,
+                    'domain': video.domain,
+                    'title': video.title,
+                    'url': video.url,
+                    'uploader': video.uploader,
+                    'duration': video.duration,
+                    'created_at': video.created_at.isoformat() if video.created_at else None
+                })
+            
+            logger.info(f"Found {len(videos)} videos with < {min_num_clips} clips and 0 transcriptions")
+            return videos
+            
+        except Exception as e:
+            logger.error(f"Error getting videos with low clips: {e}")
+            raise
+    
+    @staticmethod
+    async def delete_video_and_clips(
+        db: AsyncSession, 
+        video_id: str
+    ) -> Dict[str, Any]:
+        """
+        Delete a video and all its associated audio clips from the database.
+        Also returns information about the clips for cloud storage deletion.
+        
+        Args:
+            db: Database session
+            video_id: YouTube video ID
+            
+        Returns:
+            Dictionary with video info and list of audio filenames to delete from cloud
+        """
+        try:
+            # Get the video
+            video = await DatabaseService.check_video_exists(db, video_id)
+            if not video:
+                return {
+                    'success': False,
+                    'error': f'Video {video_id} not found',
+                    'audio_files': []
+                }
+            
+            # Get all audio clips for this video
+            audio_clips = await DatabaseService.get_video_audio_clips(db, video_id)
+            
+            video_info = {
+                'video_id': video.video_id,
+                'video_link': video.url,
+                'domain': video.domain,
+                'num_clips': len(audio_clips)
+            }
+            
+            # Collect audio filenames for cloud storage deletion
+            audio_files = [clip.audio_filename for clip in audio_clips]
+            
+            # Delete audio clips first (due to foreign key constraint)
+            delete_audio_stmt = delete(Audio).where(Audio.youtube_video_id == video.id)
+            await db.execute(delete_audio_stmt)
+            
+            # Delete the video
+            delete_video_stmt = delete(YouTubeVideo).where(YouTubeVideo.id == video.id)
+            await db.execute(delete_video_stmt)
+            
+            # Commit the transaction
+            await db.commit()
+            
+            logger.info(f"Deleted video {video_id} and {len(audio_files)} audio clips")
+            
+            return {
+                'success': True,
+                'video_info': video_info,
+                'audio_files': audio_files
+            }
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Error deleting video {video_id}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'audio_files': []
+            }

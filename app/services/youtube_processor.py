@@ -15,7 +15,6 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import Dict, List, Tuple, Any
-from concurrent.futures import ThreadPoolExecutor
 
 import torch
 import yt_dlp
@@ -28,9 +27,6 @@ from pydub import AudioSegment
 from df.enhance import enhance, init_df, load_audio, save_audio
 
 logger = get_logger(__name__)
-
-# Thread pool for parallel clip extraction
-_clip_extraction_executor = ThreadPoolExecutor(max_workers=4)
 
 
 class YouTubeProcessor:
@@ -339,6 +335,10 @@ class YouTubeProcessor:
                     'distance': abs(merged_raw_duration - target_for_selection)
                 }
 
+            # Maximum allowed gap between segments being merged (seconds).
+            # Segments further apart than this are not part of the same utterance.
+            MAX_MERGE_GAP = 3.0
+
             k = start_index + 1
             while k < len(segments):
                 next_seg_start, next_seg_end = segments[k]
@@ -347,7 +347,17 @@ class YouTubeProcessor:
                 if next_seg_duration >= MIN_DUR:
                     break  # Stop merging when non-small segment encountered
 
-                merged_with_next = merged_raw_duration + next_seg_duration
+                # Check gap between current merged region and next segment
+                gap = next_seg_start - merged_raw_end
+                if gap > MAX_MERGE_GAP:
+                    logger.info(
+                        f"  Stopping merge at segment {k} - gap ({gap:.2f}s) "
+                        f"exceeds MAX_MERGE_GAP ({MAX_MERGE_GAP:.2f}s)"
+                    )
+                    break
+
+                # Use actual span (start-to-end) for duration, not speech-only sum
+                merged_with_next = next_seg_end - merged_raw_start
 
                 # Enforce MAX_DUR as a hard constraint; keep best seen so far
                 if merged_with_next > MAX_DUR:
@@ -702,10 +712,10 @@ class YouTubeProcessor:
 
                     i += 1
             
-            # Second pass: Extract clips in parallel for faster processing
-            logger.info(f"Extracting {len(clips_to_extract)} clips in parallel")
+            # Second pass: Extract clips sequentially (wave module is not thread-safe)
+            logger.info(f"Extracting {len(clips_to_extract)} clips")
             
-            clips_data = self._extract_clips_parallel(
+            clips_data = self._extract_clips_sequential(
                 input_file=input_file,
                 clips_output_dir=clips_output_dir,
                 video_id=video_id,
@@ -753,7 +763,10 @@ class YouTubeProcessor:
         end_silence_bytes = b'\x00' * (end_padding_frames * sample_width)
         
         padded_data = start_silence_bytes + audio_data + end_silence_bytes
-        padded_duration = final_duration + start_padding + end_padding
+        
+        # Compute padded_duration from actual audio data to ensure it matches the WAV file
+        actual_audio_duration = len(audio_data) / (sample_rate * sample_width)
+        padded_duration = actual_audio_duration + start_padding + end_padding
         
         # Save padded audio clip to disk
         clip_path = clips_output_dir / clip_name
@@ -763,6 +776,22 @@ class YouTubeProcessor:
             out_f.setframerate(sample_rate)
             out_f.writeframes(padded_data)
         
+        # Verify the written file to catch corruption
+        with wave.open(str(clip_path), 'rb') as verify_f:
+            actual_frames = verify_f.getnframes()
+            actual_duration = actual_frames / verify_f.getframerate()
+            if abs(actual_duration - padded_duration) > 0.5:
+                logger.error(
+                    f"Duration mismatch for {clip_name}: "
+                    f"expected={padded_duration:.2f}s, actual={actual_duration:.2f}s. "
+                    f"File may be corrupted."
+                )
+                os.remove(str(clip_path))
+                raise RuntimeError(
+                    f"Clip {clip_name} written with incorrect duration "
+                    f"(expected={padded_duration:.2f}s, actual={actual_duration:.2f}s)"
+                )
+        
         return {
             'clip_name': clip_name,
             'start_time': round(final_start, 2),
@@ -771,7 +800,7 @@ class YouTubeProcessor:
             'padded_duration': round(padded_duration, 2)
         }
     
-    def _extract_clips_parallel(
+    def _extract_clips_sequential(
         self,
         input_file: str,
         clips_output_dir: Path,
@@ -783,17 +812,12 @@ class YouTubeProcessor:
         start_padding: float,
         end_padding: float
     ) -> List[Dict[str, Any]]:
-        """Extract multiple clips in parallel using thread pool."""
-        import concurrent.futures
-        
+        """Extract multiple clips sequentially to avoid wave module thread-safety issues."""
         clips_data = []
         
-        # Use thread pool for parallel extraction
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            futures = []
-            for clip_info in clips_to_extract:
-                future = executor.submit(
-                    self._extract_single_clip,
+        for clip_info in clips_to_extract:
+            try:
+                clip_data = self._extract_single_clip(
                     clip_info,
                     clips_output_dir,
                     video_id,
@@ -803,15 +827,9 @@ class YouTubeProcessor:
                     start_padding,
                     end_padding
                 )
-                futures.append(future)
-            
-            # Collect results in order
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    clip_data = future.result()
-                    clips_data.append(clip_data)
-                except Exception as e:
-                    logger.error(f"Error extracting clip: {e}")
+                clips_data.append(clip_data)
+            except Exception as e:
+                logger.error(f"Error extracting clip {clip_info.get('clip_number', '?')}: {e}")
         
         # Sort by clip name to maintain order
         clips_data.sort(key=lambda x: x['clip_name'])

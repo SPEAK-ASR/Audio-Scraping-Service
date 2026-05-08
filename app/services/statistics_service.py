@@ -488,6 +488,64 @@ class StatisticsService:
             raise
     
     @staticmethod
+    async def get_asr_reference_preference_stats(
+        db: AsyncSession,
+    ) -> Dict[str, Any]:
+        """
+        Count human copy-preference between Google STT vs SPEAK ASR references.
+        Only suitable transcriptions are included (same filter as other metadata stats).
+        """
+        try:
+            google_stmt = select(func.count(Transcription.trans_id)).where(
+                and_(
+                    Transcription.is_audio_suitable == True,
+                    Transcription.is_best_google == True,
+                )
+            )
+            speak_stmt = select(func.count(Transcription.trans_id)).where(
+                and_(
+                    Transcription.is_audio_suitable == True,
+                    Transcription.is_best_google == False,
+                )
+            )
+            neutral_stmt = select(func.count(Transcription.trans_id)).where(
+                and_(
+                    Transcription.is_audio_suitable == True,
+                    Transcription.is_best_google.is_(None),
+                )
+            )
+
+            google_result = await db.execute(google_stmt)
+            speak_result = await db.execute(speak_stmt)
+            neutral_result = await db.execute(neutral_stmt)
+
+            google_chosen = int(google_result.scalar() or 0)
+            speak_chosen = int(speak_result.scalar() or 0)
+            neutral = int(neutral_result.scalar() or 0)
+            decisive_total = google_chosen + speak_chosen
+            google_share_percent = (
+                round(google_chosen / decisive_total * 100, 2)
+                if decisive_total > 0
+                else None
+            )
+
+            stats = {
+                "google_chosen": google_chosen,
+                "speak_chosen": speak_chosen,
+                "neutral": neutral,
+                "decisive_total": decisive_total,
+                "google_share_percent": google_share_percent,
+            }
+            logger.info("ASR reference preference stats: %s", stats)
+            return stats
+        except Exception as e:
+            logger.error(
+                f"Error getting ASR reference preference stats: {e}",
+                exc_info=True,
+            )
+            raise
+    
+    @staticmethod
     async def get_all_statistics(db: AsyncSession, days: int = 30) -> Dict[str, Any]:
         """
         Get all statistics in one call.
@@ -509,6 +567,7 @@ class StatisticsService:
             admin_contributions = await StatisticsService.get_admin_contributions(db)
             audio_distribution = await StatisticsService.get_audio_distribution(db)
             transcription_metadata = await StatisticsService.get_transcription_metadata(db)
+            asr_reference_preference = await StatisticsService.get_asr_reference_preference_stats(db)
             
             statistics = {
                 'success': True,
@@ -519,7 +578,8 @@ class StatisticsService:
                 'daily_transcriptions': daily_transcriptions,
                 'admin_contributions': admin_contributions,
                 'audio_distribution': audio_distribution,
-                'transcription_metadata': transcription_metadata
+                'transcription_metadata': transcription_metadata,
+                'asr_reference_preference': asr_reference_preference,
             }
             
             logger.info("Successfully retrieved all statistics")

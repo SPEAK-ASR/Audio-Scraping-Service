@@ -5,11 +5,23 @@ This module provides endpoints for monitoring database connection pool status,
 active connections, and system health specifically for debugging connection issues.
 """
 
-from fastapi import APIRouter, HTTPException
-from sqlalchemy import text
-from typing import Dict, Any
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
+from sqlalchemy import text, select
+from sqlalchemy.orm import selectinload
+from typing import Dict, Any, Optional
+from collections import defaultdict
+from datetime import datetime
+from tqdm import tqdm
+import json
+import os
+from pathlib import Path
 
 from app.core.database import async_engine, AsyncSessionLocal
+from app.models.audio import Audio
+from app.models.youtube_video import YouTubeVideo
+from app.services.cloud_storage import CloudStorageService
+from app.schemas.audio_schemas import AudioDurationMismatchResponse, VideoMismatchInfo, MismatchedAudio
 from app.utils import get_logger
 
 logger = get_logger(__name__)
@@ -331,3 +343,204 @@ async def get_monitoring_summary() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Failed to get monitoring summary: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get monitoring summary: {str(e)}")
+
+
+@router.get("/audio-duration-mismatch")
+async def check_audio_duration_mismatch(
+    min_date: Optional[str] = Query(
+        None,
+        description="Minimum date (YYYY-MM-DD) to filter videos by created_at. Only checks audios from videos created after this date."
+    )
+):
+    """
+    Check for mismatches between database padded_duration and actual cloud storage audio duration.
+    
+    Compares the padded_duration stored in the database with the actual duration 
+    of audio files in the cloud bucket. Returns all mismatched audios grouped by video.
+    
+    Args:
+        min_date: Optional minimum date filter (YYYY-MM-DD format)
+    
+    Returns:
+        AudioDurationMismatchResponse with total mismatch count and detailed video information
+    """
+    try:
+        logger.info(f"Starting audio duration mismatch check (min_date: {min_date})")
+        
+        # Parse min_date if provided
+        min_datetime = None
+        if min_date:
+            try:
+                min_datetime = datetime.strptime(min_date, "%Y-%m-%d")
+                logger.info(f"Filtering audios from videos created after {min_datetime}")
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid date format. Use YYYY-MM-DD format."
+                )
+        
+        # Fetch audio data from database first, then close connection
+        async with AsyncSessionLocal() as session:
+            # Build query
+            query = (
+                select(Audio)
+                .join(Audio.youtube_video)
+                .options(selectinload(Audio.youtube_video))
+                .where(Audio.padded_duration.isnot(None))
+            )
+            
+            # Apply date filter if provided
+            if min_datetime:
+                query = query.where(YouTubeVideo.created_at >= min_datetime)
+            
+            result = await session.execute(query)
+            audios = result.scalars().all()
+            
+            logger.info(f"Found {len(audios)} audios with padded_duration to check")
+            
+            if not audios:
+                # Create empty response and return file
+                data_dir = Path("data")
+                data_dir.mkdir(exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"audio_duration_mismatch_{timestamp}.json"
+                filepath = data_dir / filename
+                
+                empty_response = {
+                    "total_mismatch_audios": 0,
+                    "total_relevant_videos": 0,
+                    "videos": []
+                }
+                
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(empty_response, f, indent=2)
+                
+                return FileResponse(
+                    path=str(filepath),
+                    media_type="application/json",
+                    filename=filename
+                )
+            
+            # Extract data we need before closing the session
+            audio_data = [
+                {
+                    "audio_filename": audio.audio_filename,
+                    "padded_duration": audio.padded_duration,
+                    "video_id": audio.youtube_video.video_id if audio.youtube_video else "unknown"
+                }
+                for audio in audios
+            ]
+        
+        # Database session is now closed, safe to do long-running operations
+        
+        # Initialize cloud storage service
+        cloud_storage = CloudStorageService()
+        
+        # Get all audio filenames for batch processing
+        audio_filenames = [item["audio_filename"] for item in audio_data]
+        
+        # Batch download and get durations with progress bar
+        logger.info("Fetching audio durations from cloud storage (this may take a while)...")
+        print(f"\n🔍 Checking {len(audio_data)} audio files for duration mismatches...")
+        
+        # Use tqdm progress bar
+        durations_dict = {}
+        batch_size = 30  # Process in smaller batches to avoid connection pool issues
+        
+        with tqdm(total=len(audio_filenames), desc="Checking audio durations", unit="file") as pbar:
+            for i in range(0, len(audio_filenames), batch_size):
+                batch = audio_filenames[i:i + batch_size]
+                batch_durations = await cloud_storage.get_audio_durations_batch(batch, max_concurrent=8)
+                durations_dict.update(batch_durations)
+                pbar.update(len(batch))
+        
+        # Group audios by video and compare durations
+        video_groups = defaultdict(lambda: {"correct": [], "mismatch": []})
+        total_mismatch_count = 0
+        tolerance = 0.1  # 0.1 second tolerance for rounding
+        
+        logger.info("Analyzing duration differences...")
+        print("\n📊 Analyzing duration differences...")
+        
+        for item in tqdm(audio_data, desc="Analyzing", unit="audio"):
+            actual_duration = durations_dict.get(item["audio_filename"])
+            
+            # Skip if we couldn't get the actual duration
+            if actual_duration is None:
+                continue
+            
+            # Compare durations
+            duration_diff = abs(item["padded_duration"] - actual_duration)
+            video_id = item["video_id"]
+            
+            if duration_diff > tolerance:
+                # Mismatch found
+                video_groups[video_id]["mismatch"].append({
+                    "audio_filename": item["audio_filename"],
+                    "database_duration": item["padded_duration"],
+                    "actual_duration": actual_duration
+                })
+                total_mismatch_count += 1
+            else:
+                # Duration matches
+                video_groups[video_id]["correct"].append(item["audio_filename"])
+        
+        # Build response - use plain dicts instead of Pydantic models
+        videos_list = []
+        for video_id, audios_info in video_groups.items():
+            if audios_info["mismatch"]:  # Only include videos with mismatches
+                videos_list.append({
+                    "video_id": video_id,
+                    "correct_audio_count": len(audios_info["correct"]),
+                    "mismatch_audio_count": len(audios_info["mismatch"]),
+                    "mismatched_audios": audios_info["mismatch"]
+                })
+        
+        result_msg = (
+            f"\n✅ Mismatch check complete: {total_mismatch_count} mismatches "
+            f"across {len(videos_list)} videos"
+        )
+        logger.info(result_msg)
+        print(result_msg)
+        
+        # Create data directory if it doesn't exist
+        data_dir = Path("data")
+        data_dir.mkdir(exist_ok=True)
+        
+        # Create response data
+        response_data = {
+            "total_mismatch_audios": total_mismatch_count,
+            "total_relevant_videos": len(videos_list),
+            "videos": videos_list
+        }
+        
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"audio_duration_mismatch_{timestamp}.json"
+        filepath = data_dir / filename
+        
+        # Write to JSON file
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(response_data, f, indent=2, ensure_ascii=False)
+        
+        logger.info(f"Response written to {filepath}")
+        print(f"\n💾 Response saved to: {filepath}")
+        
+        # Return file as download
+        return FileResponse(
+            path=str(filepath),
+            media_type="application/json",
+            filename=filename,
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to check audio duration mismatch: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to check audio duration mismatch: {str(e)}"
+        )

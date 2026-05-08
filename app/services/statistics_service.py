@@ -496,22 +496,22 @@ class StatisticsService:
         Only suitable transcriptions are included (same filter as other metadata stats).
         """
         try:
-            google_stmt = select(func.count(Transcription.trans_id)).where(
+            google_stmt = select(func.count(Transcription.trans_id)).join(Audio).where(
                 and_(
                     Transcription.is_audio_suitable == True,
-                    Transcription.is_best_google == True,
+                    Audio.is_best_google == True,
                 )
             )
-            speak_stmt = select(func.count(Transcription.trans_id)).where(
+            speak_stmt = select(func.count(Transcription.trans_id)).join(Audio).where(
                 and_(
                     Transcription.is_audio_suitable == True,
-                    Transcription.is_best_google == False,
+                    Audio.is_best_google == False,
                 )
             )
-            neutral_stmt = select(func.count(Transcription.trans_id)).where(
+            neutral_stmt = select(func.count(Transcription.trans_id)).join(Audio).where(
                 and_(
                     Transcription.is_audio_suitable == True,
-                    Transcription.is_best_google.is_(None),
+                    Audio.is_best_google.is_(None),
                 )
             )
 

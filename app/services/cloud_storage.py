@@ -7,11 +7,14 @@ and returns public URLs for the uploaded files.
 
 import os
 import asyncio
+import tempfile
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 from google.cloud import storage
+from pydub import AudioSegment
+import google.auth.transport.requests
 
 from app.core.config import settings
 from app.core.gcp_auth import gcp_auth_manager
@@ -19,8 +22,10 @@ from app.utils import get_logger
 
 logger = get_logger(__name__)
 
-# Thread pool for concurrent uploads
-_upload_executor = ThreadPoolExecutor(max_workers=10)
+# Thread pool for concurrent uploads and downloads
+# Keep these lower to avoid overwhelming the connection pool
+_upload_executor = ThreadPoolExecutor(max_workers=8)
+_download_executor = ThreadPoolExecutor(max_workers=8)
 
 
 class CloudStorageService:
@@ -33,7 +38,23 @@ class CloudStorageService:
     
     def _initialize_client(self) -> storage.Client:
         """Initialize Google Cloud Storage client using the centralized auth manager."""
-        return gcp_auth_manager.get_storage_client()
+        # Get client with custom configuration for better connection pooling
+        client = gcp_auth_manager.get_storage_client()
+        
+        # Configure the underlying session for better connection management
+        if hasattr(client, '_http'):
+            # Increase connection pool size for concurrent operations
+            from urllib3.util.retry import Retry
+            import requests.adapters
+            
+            adapter = requests.adapters.HTTPAdapter(
+                pool_connections=10,
+                pool_maxsize=10,
+                max_retries=Retry(total=3, backoff_factor=0.3)
+            )
+            client._http.mount('https://', adapter)
+        
+        return client
     
     async def upload_audio_file(self, file_path: str, blob_name: str) -> str:
         """
@@ -171,7 +192,7 @@ class CloudStorageService:
                 blob = self.bucket.blob(blob_name)
                 blob.delete()
                 successful.append(blob_name)
-                logger.info(f"Successfully deleted {blob_name} from cloud storage")
+                logger.debug(f"Successfully deleted {blob_name} from cloud storage")
             except Exception as e:
                 logger.error(f"Failed to delete {blob_name}: {str(e)}")
                 failed.append({'blob_name': blob_name, 'error': str(e)})
@@ -251,3 +272,92 @@ class CloudStorageService:
         except Exception as e:
             logger.error(f"Error checking if {blob_name} exists: {str(e)}")
             return False
+    
+    def _get_audio_duration_sync(self, blob_name: str) -> Optional[float]:
+        """
+        Synchronous method to get audio duration for use in thread pool.
+        
+        Args:
+            blob_name: Name/path of the audio file in the bucket
+            
+        Returns:
+            Duration in seconds, or None if failed
+        """
+        try:
+            blob = self.bucket.blob(blob_name)
+            
+            # Check if file exists
+            if not blob.exists():
+                return None
+            
+            # Download to temporary file
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+                temp_path = temp_file.name
+            
+            try:
+                # Download the blob
+                blob.download_to_filename(temp_path)
+                
+                # Get duration using pydub
+                audio = AudioSegment.from_file(temp_path)
+                duration_seconds = len(audio) / 1000.0  # pydub returns milliseconds
+                
+                return duration_seconds
+                
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                    
+        except Exception as e:
+            logger.error(f"Failed to get duration for {blob_name}: {str(e)}")
+            return None
+    
+    async def get_audio_duration(self, blob_name: str) -> Optional[float]:
+        """
+        Get the duration of an audio file from cloud storage (async wrapper).
+        
+        Args:
+            blob_name: Name/path of the audio file in the bucket
+            
+        Returns:
+            Duration in seconds, or None if failed
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            _download_executor,
+            self._get_audio_duration_sync,
+            blob_name
+        )
+    
+    async def get_audio_durations_batch(self, blob_names: List[str], max_concurrent: int = 8) -> Dict[str, Optional[float]]:
+        """
+        Get durations for multiple audio files concurrently.
+        
+        Args:
+            blob_names: List of blob names to check
+            max_concurrent: Maximum number of concurrent operations (default 8 to match connection pool)
+            
+        Returns:
+            Dictionary mapping blob_name to duration (or None if failed)
+        """
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async def get_with_semaphore(blob_name: str):
+            async with semaphore:
+                duration = await self.get_audio_duration(blob_name)
+                return blob_name, duration
+        
+        tasks = [get_with_semaphore(name) for name in blob_names]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Build result dictionary
+        durations = {}
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Error in batch duration check: {result}")
+                continue
+            blob_name, duration = result
+            durations[blob_name] = duration
+        
+        return durations

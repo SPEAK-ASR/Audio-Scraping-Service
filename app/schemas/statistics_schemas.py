@@ -104,6 +104,18 @@ class TranscriptionMetadata(BaseModel):
     speaker_overlapping: SpeakerOverlappingData
 
 
+class AsrReferencePreferenceStats(BaseModel):
+    """Human copy preference when Google vs SPEAK machine references differ."""
+    google_chosen: int = Field(..., description="Submissions where user copied Google reference")
+    speak_chosen: int = Field(..., description="Submissions where user copied SPEAK reference")
+    neutral: int = Field(..., description="Manual entry, identical refs, or no preference recorded")
+    decisive_total: int = Field(..., description="google_chosen + speak_chosen")
+    google_share_percent: Optional[float] = Field(
+        None,
+        description="Google wins as % of decisive copy choices",
+    )
+
+
 class StatisticsResponse(BaseModel):
     """Complete statistics response."""
     success: bool = Field(default=True)
@@ -115,3 +127,4 @@ class StatisticsResponse(BaseModel):
     admin_contributions: List[AdminContributionData]
     audio_distribution: List[AudioDurationDistribution]
     transcription_metadata: TranscriptionMetadata
+    asr_reference_preference: AsrReferencePreferenceStats

@@ -2,7 +2,7 @@
 SQLAlchemy model for Audio table.
 """
 
-from sqlalchemy import Column, Integer, Text, DateTime, Time, Float, ForeignKey
+from sqlalchemy import Column, Integer, Text, DateTime, Time, Float, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -27,6 +27,7 @@ class Audio(Base):
     end_time = Column(Time(timezone=False), nullable=True)
     padded_duration = Column(Float, nullable=True)
     youtube_video_id = Column(UUID(as_uuid=True), ForeignKey("YouTube_Video.id"), nullable=True)
+    is_best_google = Column(Boolean, nullable=True)
     
     # Relationship to YouTube video
     youtube_video = relationship("YouTubeVideo", back_populates="audio_clips")

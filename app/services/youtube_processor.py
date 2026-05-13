@@ -9,7 +9,6 @@ import os
 import json
 import re
 import contextlib
-import collections
 import wave
 import subprocess
 import tempfile
@@ -17,8 +16,9 @@ import shutil
 from pathlib import Path
 from typing import Dict, List, Tuple, Any
 
+import torch
 import yt_dlp
-import webrtcvad
+from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
 from app.utils import get_logger
 from app.core.config import settings
 from pydub import AudioSegment
@@ -29,15 +29,6 @@ from df.enhance import enhance, init_df, load_audio, save_audio
 logger = get_logger(__name__)
 
 
-class Frame:
-    """Represents a single audio frame for VAD processing."""
-    
-    def __init__(self, bytes_data, timestamp, duration):
-        self.bytes = bytes_data
-        self.timestamp = timestamp
-        self.duration = duration
-
-
 class YouTubeProcessor:
     """Service for processing YouTube videos into audio clips."""
     
@@ -45,6 +36,7 @@ class YouTubeProcessor:
         self.temp_files = []
         self._check_dependencies()
         self.model, self.df_state, _ = init_df()
+        self.vad_model = load_silero_vad()
     
     def _check_dependencies(self) -> None:
         """Check if required dependencies (FFmpeg) are available."""
@@ -107,6 +99,105 @@ class YouTubeProcessor:
         except Exception as e:
             logger.error(f"Unexpected error during metadata fetch: {str(e)}")
             raise RuntimeError(f"Metadata fetch failed: {str(e)}")
+
+    def _clean_youtube_url(self, url: str, video_id: str = None) -> str:
+        """
+        Clean YouTube URL to remove playlist parameters.
+        Returns format: https://www.youtube.com/watch?v=VIDEO_ID
+        """
+        if not video_id:
+            try:
+                # Try to extract ID from URL if not provided
+                video_id = self.extract_video_id(url)
+            except ValueError:
+                # If extraction fails, just return the original URL but warn
+                logger.warning(f"Could not extract video ID from {url} for cleaning. Returning original.")
+                return url
+                
+        return f"https://www.youtube.com/watch?v={video_id}"
+
+    async def get_playlist_info(self, playlist_url: str, limit: int = None) -> Dict[str, Any]:
+        """
+        Get playlist videos and metadata.
+        
+        Args:
+            playlist_url: YouTube playlist URL
+            limit: Optional max number of videos to return
+            
+        Returns:
+            Dictionary with playlist metadata and list of videos
+        """
+        logger.info(f"Fetching playlist metadata: {playlist_url}")
+        
+        ydl_opts = {
+            'extract_flat': 'in_playlist', 
+            'dump_single_json': True,
+            'flatten': True,
+            'ignoreerrors': True,
+            'quiet': True,
+            'no_warnings': True,
+        }
+        
+        if limit and limit > 0:
+            ydl_opts['playlistend'] = limit
+            
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # extract_info with extract_flat='in_playlist' returns a dictionary
+                # entries key contains the video list
+                result = ydl.extract_info(playlist_url, download=False)
+                
+                # Check if it's a playlist or single video
+                if 'entries' not in result:
+                    if result.get('_type') == 'playlist':
+                         entries = [] 
+                    else:
+                        # Single video?
+                        logger.warning(f"URL might not be a playlist: {playlist_url}")
+                        # Treat as single video playlist
+                        entries = [result]
+                else:
+                    entries = result['entries']
+
+                # Process entries
+                videos = []
+                for entry in entries:
+                    if not entry: # Skip None entries
+                        continue
+                        
+                    video_id = entry.get('id')
+                    original_url = entry.get('url') or f"https://www.youtube.com/watch?v={video_id}"
+                    
+                    # Clean the URL
+                    clean_url = self._clean_youtube_url(original_url, video_id)
+                    
+                    # Get duration safely
+                    duration = entry.get('duration')
+                    if duration is None:
+                         duration = 0
+                    
+                    videos.append({
+                        'video_id': video_id,
+                        'url': clean_url,
+                        'title': entry.get('title', 'Unknown Title'),
+                        'duration': int(duration),
+                        'thumbnail': entry.get('thumbnail') or (f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg" if video_id else None)
+                    })
+                    
+                return {
+                    'playlist_id': result.get('id'),
+                    'playlist_title': result.get('title', 'Unknown Playlist'),
+                    'total_videos': len(videos),
+                    'videos': videos
+                }
+                
+        except yt_dlp.utils.DownloadError as e:
+            logger.error(f"Playlist fetch failed: {str(e)}")
+            raise RuntimeError(f"Playlist fetch failed: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error during playlist fetch: {str(e)}")
+            raise RuntimeError(f"Playlist fetch failed: {str(e)}")
+
     
     async def download_audio(self, youtube_url: str, output_file: str) -> Dict[str, Any]:
         """Download audio from YouTube video and extract metadata."""
@@ -124,6 +215,10 @@ class YouTubeProcessor:
             'outtmpl': temp_raw_file,
             'quiet': True,  # Reduce yt-dlp output noise
             'no_warnings': False,
+            # Performance optimizations
+            'concurrent_fragment_downloads': 4,  # Download fragments in parallel
+            'buffersize': 1024 * 16,  # Larger buffer for faster downloads
+            'http_chunk_size': 10485760,  # 10MB chunks for better throughput
         }
         
         try:
@@ -179,9 +274,13 @@ class YouTubeProcessor:
         
         try:
             logger.info(f"Converting {actual_input_file} to mono 16kHz WAV format")
+            # Use multi-threaded FFmpeg for faster conversion
             result = subprocess.run([
-                "ffmpeg", "-y", "-i", actual_input_file,
-                "-ac", "1", "-ar", "48000", "-acodec", "pcm_s16le", 
+                "ffmpeg", "-y", 
+                "-threads", "0",  # Auto-detect optimal thread count
+                "-i", actual_input_file,
+                "-ac", "1", "-ar", "48000", "-acodec", "pcm_s16le",
+                "-threads", "0",  # Output threads as well
                 output_file
             ], check=True, capture_output=True, text=True)
             logger.info("Audio conversion completed successfully")
@@ -198,59 +297,8 @@ class YouTubeProcessor:
             logger.info("Cleaned up temporary raw audio file")
         
         return metadata
-    
-    def frame_generator(self, frame_duration_ms: int, audio: bytes, sample_rate: int):
-        """Generate audio frames for VAD processing."""
-        n = int(sample_rate * (frame_duration_ms / 1000.0) * 2)
-        offset = 0
-        timestamp = 0.0
-        duration = (float(n) / sample_rate) / 2.0
-        
-        while offset + n <= len(audio):
-            yield Frame(audio[offset:offset + n], timestamp, duration)
-            timestamp += duration
-            offset += n
-    
-    def vad_collector(self, sample_rate: int, frame_duration_ms: int, 
-                     padding_duration_ms: int, vad: webrtcvad.Vad, frames) -> List[Tuple[float, float]]:
-        """Collect voice activity segments from audio frames."""
-        num_padding_frames = int(padding_duration_ms / frame_duration_ms)
-        ring_buffer = collections.deque(maxlen=num_padding_frames)
-        triggered = False
-        voiced_frames = []
-        segments = []
-        
-        for frame in frames:
-            is_speech = vad.is_speech(frame.bytes, sample_rate)
-            
-            if not triggered:
-                ring_buffer.append((frame, is_speech))
-                num_voiced = len([f for f, speech in ring_buffer if speech])
-                if num_voiced > 0.9 * ring_buffer.maxlen:
-                    triggered = True
-                    for f, s in ring_buffer:
-                        voiced_frames.append(f)
-                    ring_buffer.clear()
-            else:
-                voiced_frames.append(frame)
-                ring_buffer.append((frame, is_speech))
-                num_unvoiced = len([f for f, speech in ring_buffer if not speech])
-                if num_unvoiced > 0.9 * ring_buffer.maxlen:
-                    triggered = False
-                    segment_start = voiced_frames[0].timestamp
-                    segment_end = voiced_frames[-1].timestamp + voiced_frames[-1].duration
-                    segments.append((segment_start, segment_end))
-                    ring_buffer.clear()
-                    voiced_frames = []
-        
-        if voiced_frames:
-            segment_start = voiced_frames[0].timestamp
-            segment_end = voiced_frames[-1].timestamp + voiced_frames[-1].duration
-            segments.append((segment_start, segment_end))
-        
-        return segments
-    
-    
+
+
     def merge_consecutive_small_segments(self, segments: List[Tuple[float, float]], start_index: int,
                                          MIN_DUR: float, MAX_DUR: float, DESIRED_MEAN: float,
                                          merged_durations: List[float]) -> Tuple[float, float, float, int]:
@@ -287,6 +335,10 @@ class YouTubeProcessor:
                     'distance': abs(merged_raw_duration - target_for_selection)
                 }
 
+            # Maximum allowed gap between segments being merged (seconds).
+            # Segments further apart than this are not part of the same utterance.
+            MAX_MERGE_GAP = 3.0
+
             k = start_index + 1
             while k < len(segments):
                 next_seg_start, next_seg_end = segments[k]
@@ -295,7 +347,17 @@ class YouTubeProcessor:
                 if next_seg_duration >= MIN_DUR:
                     break  # Stop merging when non-small segment encountered
 
-                merged_with_next = merged_raw_duration + next_seg_duration
+                # Check gap between current merged region and next segment
+                gap = next_seg_start - merged_raw_end
+                if gap > MAX_MERGE_GAP:
+                    logger.info(
+                        f"  Stopping merge at segment {k} - gap ({gap:.2f}s) "
+                        f"exceeds MAX_MERGE_GAP ({MAX_MERGE_GAP:.2f}s)"
+                    )
+                    break
+
+                # Use actual span (start-to-end) for duration, not speech-only sum
+                merged_with_next = next_seg_end - merged_raw_start
 
                 # Enforce MAX_DUR as a hard constraint; keep best seen so far
                 if merged_with_next > MAX_DUR:
@@ -359,30 +421,168 @@ class YouTubeProcessor:
             final_count = chosen['count']
 
             return final_start, final_end, final_duration, final_count
-        
+
+    def split_large_segment(self, wav, segment_start: float, segment_end: float,
+                            original_threshold: float, clip_counter: int,
+                            merged_durations: List[float], MIN_DUR: float,
+                            MAX_DUR: float, DESIRED_MEAN: float) -> Tuple[List[Dict[str, Any]], int]:
+        """
+        Attempt to split a large segment (> MAX_DUR) by re-running VAD with
+        progressively increased (stricter) thresholds on the segment's audio slice.
+
+        Returns:
+            A tuple of (list of clip dicts, updated clip_counter).
+        """
+        segment_duration = segment_end - segment_start
+        result_clips = []
+
+        # Extract audio slice for this segment
+        sample_rate = 16000
+        start_sample = int(segment_start * sample_rate)
+        end_sample = int(segment_end * sample_rate)
+        wav_slice = wav[start_sample:end_sample]
+
+        threshold_step = settings.VAD_THRESHOLD_STEP
+        threshold_ceiling = settings.VAD_THRESHOLD_CEILING
+        current_threshold = original_threshold + threshold_step
+
+        while current_threshold <= threshold_ceiling:
+            logger.info(
+                f"  Attempting to split large segment "
+                f"({segment_start:.2f}s-{segment_end:.2f}s, {segment_duration:.2f}s) "
+                f"with threshold={current_threshold:.2f}"
+            )
+
+            sub_timestamps = get_speech_timestamps(
+                wav_slice,
+                self.vad_model,
+                threshold=current_threshold,
+                sampling_rate=sample_rate,
+                return_seconds=True,
+            )
+
+            if not sub_timestamps:
+                logger.info(
+                    f"    No speech detected at threshold={current_threshold:.2f}, "
+                    f"trying higher threshold"
+                )
+                current_threshold += threshold_step
+                continue
+
+            # Convert to absolute timestamps (offset by segment start)
+            sub_segments = [
+                (s['start'] + segment_start, s['end'] + segment_start)
+                for s in sub_timestamps
+            ]
+
+            # Process sub-segments mirroring the main loop logic
+            valid_clips = []
+            si = 0
+
+            while si < len(sub_segments):
+                ss, se = sub_segments[si]
+                sd = se - ss
+
+                if MIN_DUR <= sd <= MAX_DUR:
+                    # Valid sub-segment
+                    valid_clips.append({
+                        'clip_number': None,
+                        'final_start': ss,
+                        'final_end': se,
+                        'final_duration': sd
+                    })
+                    si += 1
+
+                elif sd < MIN_DUR:
+                    # Small sub-segment - try to merge consecutive small ones
+                    consecutive_small = 1
+                    sj = si + 1
+                    while sj < len(sub_segments) and (sub_segments[sj][1] - sub_segments[sj][0]) < MIN_DUR:
+                        consecutive_small += 1
+                        sj += 1
+
+                    if consecutive_small >= 2:
+                        final_start, final_end, final_duration, used_count = \
+                            self.merge_consecutive_small_segments(
+                                sub_segments, si, MIN_DUR, MAX_DUR,
+                                DESIRED_MEAN, merged_durations
+                            )
+                        if MIN_DUR <= final_duration <= MAX_DUR:
+                            merged_durations.append(final_duration)
+                            valid_clips.append({
+                                'clip_number': None,
+                                'final_start': final_start,
+                                'final_end': final_end,
+                                'final_duration': final_duration
+                            })
+                        si += used_count
+                    else:
+                        # Single small sub-segment, skip
+                        si += 1
+
+                else:
+                    # Still too large, skip (don't recurse)
+                    logger.info(
+                        f"    Sub-segment {ss:.2f}s-{se:.2f}s ({sd:.2f}s) "
+                        f"still exceeds MAX_DUR, skipping"
+                    )
+                    si += 1
+
+            if valid_clips:
+                # Sort by start time and assign clip numbers
+                valid_clips.sort(key=lambda c: c['final_start'])
+                for clip in valid_clips:
+                    clip['clip_number'] = clip_counter
+                    clip_counter += 1
+                result_clips.extend(valid_clips)
+
+                logger.info(
+                    f"    Successfully split large segment into "
+                    f"{len(valid_clips)} valid clips at threshold={current_threshold:.2f}"
+                )
+                return result_clips, clip_counter
+
+            logger.info(
+                f"    Threshold {current_threshold:.2f} produced no valid clips, "
+                f"increasing threshold"
+            )
+            current_threshold += threshold_step
+
+        # All threshold attempts exhausted
+        logger.warning(
+            f"  Could not split large segment "
+            f"({segment_start:.2f}s-{segment_end:.2f}s, {segment_duration:.2f}s) "
+            f"- skipping"
+        )
+        return [], clip_counter
+
     def split_with_vad(self, input_file: str, output_dir: Path, video_id: str,
-                    aggressiveness: int = 2, start_padding: float = 1.0, 
+                    threshold: float = 0.5, start_padding: float = 1.0,
                     end_padding: float = 0.5) -> List[Dict[str, Any]]:
             """Split audio file using Voice Activity Detection."""
+            # Read audio for VAD using silero-vad
+            wav = read_audio(input_file)
+            speech_timestamps = get_speech_timestamps(
+                wav,
+                self.vad_model,
+                threshold=threshold,
+                sampling_rate=16000,
+                return_seconds=True,
+            )
+            segments = [(s['start'], s['end']) for s in speech_timestamps]
+
+            # Read PCM data for clip extraction
             with contextlib.closing(wave.open(input_file, 'rb')) as wf:
                 num_channels = wf.getnchannels()
                 assert num_channels == 1
                 sample_width = wf.getsampwidth()
                 assert sample_width == 2
                 sample_rate = wf.getframerate()
-                assert sample_rate in (8000, 16000, 32000, 48000)
                 pcm_data = wf.readframes(wf.getnframes())
-            
-            vad = webrtcvad.Vad(aggressiveness)
-            frames = list(self.frame_generator(30, pcm_data, sample_rate))
-            segments = self.vad_collector(sample_rate, 30, 300, vad, frames)
             
             # Create output directory with base directory structure
             clips_output_dir = output_dir / "output" / video_id
             clips_output_dir.mkdir(parents=True, exist_ok=True)
-            
-            clips_data = []
-            clip_counter = 1
             
             logger.info(f"Found {len(segments)} voice segments in audio")
             
@@ -401,6 +601,9 @@ class YouTubeProcessor:
                 f"MAX={MAX_DUR:.2f}s, TARGET_MEAN={DESIRED_MEAN:.2f}s"
             )
 
+            # First pass: Determine which segments to keep and their final timings
+            clips_to_extract = []
+            clip_counter = 1
             i = 0
 
             while i < len(segments):
@@ -414,9 +617,13 @@ class YouTubeProcessor:
                         f"(duration: {segment_duration:.2f}s) - KEEP AS-IS"
                     )
 
-                    final_start = segment_start
-                    final_end = segment_end
-                    final_duration = segment_duration
+                    clips_to_extract.append({
+                        'clip_number': clip_counter,
+                        'final_start': segment_start,
+                        'final_end': segment_end,
+                        'final_duration': segment_duration
+                    })
+                    clip_counter += 1
                     i += 1
 
                 # Case 2: Small segment
@@ -453,6 +660,13 @@ class YouTubeProcessor:
                                 f"end={final_end:.2f}s, duration={final_duration:.2f}s, "
                                 f"used_segments={used_count}"
                             )
+                            clips_to_extract.append({
+                                'clip_number': clip_counter,
+                                'final_start': final_start,
+                                'final_end': final_end,
+                                'final_duration': final_duration
+                            })
+                            clip_counter += 1
                             i += used_count
                         else:
                             logger.info(
@@ -460,67 +674,171 @@ class YouTubeProcessor:
                                 f"[{MIN_DUR:.2f}s, {MAX_DUR:.2f}s]"
                             )
                             i += used_count
-                            continue
                     else:
                         logger.info(
                             f"Only one small segment at {i} - skipping "
                             f"(duration: {segment_duration:.2f}s < MIN_DUR)"
                         )
                         i += 1
-                        continue
 
-                # Case 3: Large segment
+                # Case 3: Large segment - attempt to split with higher thresholds
                 else:
                     logger.info(
                         f"Segment {i}: {segment_start:.2f}s-{segment_end:.2f}s "
-                        f"(duration: {segment_duration:.2f}s) - LARGE, skipping (duration > MAX_DUR)"
+                        f"(duration: {segment_duration:.2f}s) - LARGE, attempting split"
                     )
+
+                    split_clips, clip_counter = self.split_large_segment(
+                        wav=wav,
+                        segment_start=segment_start,
+                        segment_end=segment_end,
+                        original_threshold=threshold,
+                        clip_counter=clip_counter,
+                        merged_durations=merged_durations,
+                        MIN_DUR=MIN_DUR,
+                        MAX_DUR=MAX_DUR,
+                        DESIRED_MEAN=DESIRED_MEAN
+                    )
+
+                    if split_clips:
+                        clips_to_extract.extend(split_clips)
+                        logger.info(
+                            f"  Split large segment into {len(split_clips)} clips"
+                        )
+                    else:
+                        logger.info(
+                            f"  Could not split large segment, skipping"
+                        )
+
                     i += 1
-                    continue
-                
-                clip_name = f"{video_id}-{clip_counter:03d}.wav"
-                
-                # Extract original audio segment using raw timing
-                with contextlib.closing(wave.open(input_file, 'rb')) as wf:
-                    wf.setpos(int(final_start * sample_rate))
-                    frames_to_read = int(final_duration * sample_rate)
-                    audio_data = wf.readframes(frames_to_read)
-                
-                # Apply padding
-                start_padding_frames = int(start_padding * sample_rate)
-                end_padding_frames = int(end_padding * sample_rate)
-                start_silence_bytes = b'\x00' * (start_padding_frames * sample_width)
-                end_silence_bytes = b'\x00' * (end_padding_frames * sample_width)
-                
-                padded_data = start_silence_bytes + audio_data + end_silence_bytes
-                padded_duration = final_duration + start_padding + end_padding
-                
-                # Save padded audio clip to disk
-                clip_path = clips_output_dir / clip_name
-                with wave.open(str(clip_path), 'wb') as out_f:
-                    out_f.setnchannels(1)
-                    out_f.setsampwidth(sample_width)
-                    out_f.setframerate(sample_rate)
-                    out_f.writeframes(padded_data)
-                
-                clips_data.append({
-                    'clip_name': clip_name,
-                    'start_time': round(final_start, 2),
-                    'end_time': round(final_end, 2),
-                    'duration': round(final_duration, 2),
-                    'padded_duration': round(padded_duration, 2)
-                })
-                
-                clip_counter += 1
+            
+            # Second pass: Extract clips sequentially (wave module is not thread-safe)
+            logger.info(f"Extracting {len(clips_to_extract)} clips")
+            
+            clips_data = self._extract_clips_sequential(
+                input_file=input_file,
+                clips_output_dir=clips_output_dir,
+                video_id=video_id,
+                clips_to_extract=clips_to_extract,
+                sample_rate=sample_rate,
+                sample_width=sample_width,
+                pcm_data=pcm_data,
+                start_padding=start_padding,
+                end_padding=end_padding
+            )
             
             logger.info(
                 f"Successfully created {len(clips_data)} audio clips from {len(segments)} segments"
             )
             return clips_data
+    
+    def _extract_single_clip(
+        self,
+        clip_info: Dict,
+        clips_output_dir: Path,
+        video_id: str,
+        sample_rate: int,
+        sample_width: int,
+        pcm_data: bytes,
+        start_padding: float,
+        end_padding: float
+    ) -> Dict[str, Any]:
+        """Extract a single clip from audio data."""
+        clip_number = clip_info['clip_number']
+        final_start = clip_info['final_start']
+        final_end = clip_info['final_end']
+        final_duration = clip_info['final_duration']
+        
+        clip_name = f"{video_id}-{clip_number:03d}.wav"
+        
+        # Calculate byte positions
+        start_byte = int(final_start * sample_rate) * sample_width
+        end_byte = int(final_end * sample_rate) * sample_width
+        audio_data = pcm_data[start_byte:end_byte]
+        
+        # Apply padding
+        start_padding_frames = int(start_padding * sample_rate)
+        end_padding_frames = int(end_padding * sample_rate)
+        start_silence_bytes = b'\x00' * (start_padding_frames * sample_width)
+        end_silence_bytes = b'\x00' * (end_padding_frames * sample_width)
+        
+        padded_data = start_silence_bytes + audio_data + end_silence_bytes
+        
+        # Compute padded_duration from actual audio data to ensure it matches the WAV file
+        actual_audio_duration = len(audio_data) / (sample_rate * sample_width)
+        padded_duration = actual_audio_duration + start_padding + end_padding
+        
+        # Save padded audio clip to disk
+        clip_path = clips_output_dir / clip_name
+        with wave.open(str(clip_path), 'wb') as out_f:
+            out_f.setnchannels(1)
+            out_f.setsampwidth(sample_width)
+            out_f.setframerate(sample_rate)
+            out_f.writeframes(padded_data)
+        
+        # Verify the written file to catch corruption
+        with wave.open(str(clip_path), 'rb') as verify_f:
+            actual_frames = verify_f.getnframes()
+            actual_duration = actual_frames / verify_f.getframerate()
+            if abs(actual_duration - padded_duration) > 0.5:
+                logger.error(
+                    f"Duration mismatch for {clip_name}: "
+                    f"expected={padded_duration:.2f}s, actual={actual_duration:.2f}s. "
+                    f"File may be corrupted."
+                )
+                os.remove(str(clip_path))
+                raise RuntimeError(
+                    f"Clip {clip_name} written with incorrect duration "
+                    f"(expected={padded_duration:.2f}s, actual={actual_duration:.2f}s)"
+                )
+        
+        return {
+            'clip_name': clip_name,
+            'start_time': round(final_start, 2),
+            'end_time': round(final_end, 2),
+            'duration': round(final_duration, 2),
+            'padded_duration': round(padded_duration, 2)
+        }
+    
+    def _extract_clips_sequential(
+        self,
+        input_file: str,
+        clips_output_dir: Path,
+        video_id: str,
+        clips_to_extract: List[Dict],
+        sample_rate: int,
+        sample_width: int,
+        pcm_data: bytes,
+        start_padding: float,
+        end_padding: float
+    ) -> List[Dict[str, Any]]:
+        """Extract multiple clips sequentially to avoid wave module thread-safety issues."""
+        clips_data = []
+        
+        for clip_info in clips_to_extract:
+            try:
+                clip_data = self._extract_single_clip(
+                    clip_info,
+                    clips_output_dir,
+                    video_id,
+                    sample_rate,
+                    sample_width,
+                    pcm_data,
+                    start_padding,
+                    end_padding
+                )
+                clips_data.append(clip_data)
+            except Exception as e:
+                logger.error(f"Error extracting clip {clip_info.get('clip_number', '?')}: {e}")
+        
+        # Sort by clip name to maintain order
+        clips_data.sort(key=lambda x: x['clip_name'])
+        
+        return clips_data
 
 
-    async def process_video(self, url: str, output_dir: Path, 
-                          vad_aggressiveness: int = 2, start_padding: float = 1.0, 
+    async def process_video(self, url: str, output_dir: Path,
+                          vad_threshold: float = 0.5, start_padding: float = 1.0,
                           end_padding: float = 0.5) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """Process a YouTube video: download and split into clips."""
         video_id = self.extract_video_id(url)
@@ -549,7 +867,7 @@ class YouTubeProcessor:
                     input_file=temp_audio_path,
                     output_dir=output_dir,
                     video_id=video_id,
-                    aggressiveness=vad_aggressiveness,
+                    threshold=vad_threshold,
                     start_padding=start_padding,
                     end_padding=end_padding
                 )
@@ -567,7 +885,7 @@ class YouTubeProcessor:
         output_dir: Path,
         db_session,  # AsyncSession
         check_existing: bool = True,
-        vad_aggressiveness: int = 2, 
+        vad_threshold: float = 0.5,
         start_padding: float = 1.0, 
         end_padding: float = 0.5
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], bool]:
@@ -579,7 +897,7 @@ class YouTubeProcessor:
             output_dir: Directory to save clips
             db_session: Database session
             check_existing: Whether to check if video already exists
-            vad_aggressiveness: VAD aggressiveness level
+            vad_threshold: VAD speech probability threshold
             start_padding: Start padding in seconds
             end_padding: End padding in seconds
             
@@ -629,7 +947,7 @@ class YouTubeProcessor:
         metadata, clips_data = await self.process_video(
             url=url,
             output_dir=output_dir,
-            vad_aggressiveness=vad_aggressiveness,
+            vad_threshold=vad_threshold,
             start_padding=start_padding,
             end_padding=end_padding
         )
@@ -646,6 +964,8 @@ class YouTubeProcessor:
         """
         Enhance audio using DeepFilterNet in chunks to handle long audio files.
         
+        Uses optimized chunk processing for better performance.
+        
         Args:
             input_path: Path to input audio file
             output_path: Path to save enhanced audio
@@ -653,12 +973,24 @@ class YouTubeProcessor:
         """
         import torch
         import numpy as np
-        logger.info(f"Enhancing audio with DeepFilterNet (chunked processing)")
+        logger.info(f"Enhancing audio with DeepFilterNet (optimized chunked processing)")
+        
+        # Check for GPU availability
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        logger.info(f"Using device: {device}")
         
         # Load full audio
         audio, audio_meta = load_audio(input_path, sr=self.df_state.sr())
         sr = self.df_state.sr()  # Use the model's sample rate
         logger.info(f"Audio loaded: {audio.shape[1]} samples, {audio.shape[1]/sr:.2f} seconds")
+        
+        # Use larger chunks for better GPU utilization (if GPU available)
+        if device == "cuda":
+            # Larger chunks for GPU - better throughput
+            chunk_duration_seconds = min(chunk_duration_seconds, 900)  # 15 minutes max
+        else:
+            # Smaller chunks for CPU to avoid memory issues
+            chunk_duration_seconds = min(chunk_duration_seconds, 300)  # 5 minutes max
         
         # Calculate chunk size in samples
         chunk_size = int(chunk_duration_seconds * sr)

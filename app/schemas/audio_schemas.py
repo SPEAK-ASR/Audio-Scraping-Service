@@ -25,7 +25,7 @@ class AudioProcessingRequest(BaseModel):
     add_to_transcription_service: bool = Field(default=False, description="Whether to save clips data to database")
     
     # VAD and processing parameters
-    vad_aggressiveness: int = Field(default=2, ge=0, le=3, description="VAD aggressiveness level (0-3)")
+    vad_threshold: float = Field(default=0.5, ge=0.0, le=1.0, description="VAD speech probability threshold (0.0-1.0, lower = more sensitive)")
     start_padding: float = Field(default=1.0, ge=0, le=5.0, description="Silent padding in seconds to add to beginning of clips")
     end_padding: float = Field(default=0.5, ge=0, le=5.0, description="Silent padding in seconds to add to end of clips")
 
@@ -37,7 +37,7 @@ class AudioSplitRequest(BaseModel):
     
     youtube_url: HttpUrl = Field(..., description="YouTube video URL to process")
     domain: DomainType = Field(..., description="Video domain category")
-    vad_aggressiveness: int = Field(default=2, ge=0, le=3, description="VAD aggressiveness level (0-3)")
+    vad_threshold: float = Field(default=0.5, ge=0.0, le=1.0, description="VAD speech probability threshold (0.0-1.0, lower = more sensitive)")
     start_padding: float = Field(default=1.0, ge=0, le=5.0, description="Silent padding in seconds to add to beginning of clips")
     end_padding: float = Field(default=0.5, ge=0, le=5.0, description="Silent padding in seconds to add to end of clips")
 

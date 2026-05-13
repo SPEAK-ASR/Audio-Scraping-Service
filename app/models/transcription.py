@@ -29,7 +29,7 @@ class Transcription(Base):
     is_audio_suitable = Column(Boolean, nullable=True, default=True)
     admin = Column("admin", nullable=True)  # USER-DEFINED type
     validated_at = Column(DateTime(timezone=True), nullable=True)
-    
+
     # Relationship to audio
     audio = relationship("Audio", back_populates="transcriptions")
     

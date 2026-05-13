@@ -194,3 +194,5 @@ htmlcov/
 # Audio processing temp files
 *.wav.tmp
 *.processing
+
+logs/

@@ -48,11 +48,11 @@ A FastAPI application that processes YouTube videos into audio clips with option
    ```
 
 2. **API Documentation:**
-   Visit http://localhost:8000/docs for interactive API documentation
+   Visit http://localhost:5001/docs for interactive API documentation
 
 3. **Process a YouTube video:**
    ```bash
-   curl -X POST "http://localhost:8000/api/v1/process-youtube" \
+   curl -X POST "http://localhost:5001/api/v1/process-youtube" \
         -H "Content-Type: application/json" \
         -d '{
           "youtube_url": "https://www.youtube.com/watch?v=VIDEO_ID",
@@ -75,7 +75,7 @@ Process a YouTube video with the following options:
   "get_google_transcription": false,
   "upload_to_cloud_bucket": false,
   "add_to_transcription_service": false,
-  "vad_aggressiveness": 2,
+  "vad_threshold": 0.5,
   "start_padding": 1.0,
   "end_padding": 0.5
 }

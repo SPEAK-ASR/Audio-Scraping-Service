@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     DEBUG: bool = False
     API_V1_STR: str = "/api/v1"
+    PORT: int = int(os.getenv("PORT", "5001"))
 
     # Database configuration
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
@@ -37,8 +38,10 @@ class Settings(BaseSettings):
     SERVICE_ACCOUNT_B64: Optional[str] = os.getenv("SERVICE_ACCOUNT_B64")
     
     # Audio processing configuration
-    MIN_CLIP_DURATION: float = 4.0  # Minimum clip duration in seconds
-    MAX_CLIP_DURATION: float = 10.0  # Maximum clip duration in seconds
+    MIN_CLIP_DURATION: float = 5.0  # Minimum clip duration in seconds
+    MAX_CLIP_DURATION: float = 25.0  # Maximum clip duration in seconds
+    VAD_THRESHOLD_STEP: float = 0.15  # Threshold increase per retry for large segments
+    VAD_THRESHOLD_CEILING: float = 0.90  # Max threshold before giving up on splitting
     
     # CORS settings
     ALLOWED_HOSTS: List[str] = ["*"]  # Deprecated, use ALLOWED_ORIGINS

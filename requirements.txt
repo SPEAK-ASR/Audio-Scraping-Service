@@ -1,6 +1,6 @@
 # Core dependencies
 yt-dlp
-webrtcvad
+silero-vad
 setuptools
 
 # FastAPI and web framework

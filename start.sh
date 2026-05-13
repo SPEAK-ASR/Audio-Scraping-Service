@@ -94,10 +94,10 @@ echo -e "${GREEN}✓ Backend API service started${NC}\n"
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Backend API Service${NC}"
 echo -e "${BLUE}========================================${NC}"
-echo -e "${GREEN}API Base URL:${NC}           http://localhost:8000"
-echo -e "${GREEN}API Documentation:${NC}      http://localhost:8000/docs"
-echo -e "${GREEN}ReDoc:${NC}                  http://localhost:8000/redoc"
-echo -e "${GREEN}Health Check:${NC}           http://localhost:8000/health"
+echo -e "${GREEN}API Base URL:${NC}           http://localhost:5001"
+echo -e "${GREEN}API Documentation:${NC}      http://localhost:5001/docs"
+echo -e "${GREEN}ReDoc:${NC}                  http://localhost:5001/redoc"
+echo -e "${GREEN}Health Check:${NC}           http://localhost:5001/health"
 echo -e "${GREEN}Server logs:${NC}            $LOG_DIR/server.log"
 echo -e "${BLUE}========================================${NC}"
 echo -e "${YELLOW}Note: This service handles audio scraping${NC}"
@@ -107,9 +107,9 @@ echo -e "\n${YELLOW}Press Ctrl+C to stop the service${NC}\n"
 
 # Run uvicorn with live output
 if [ "$1" = "--prod" ]; then
-    uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info 2>&1 | tee "$LOG_DIR/server.log" &
+    uvicorn app.main:app --host 0.0.0.0 --port 5001 --log-level info 2>&1 | tee "$LOG_DIR/server.log" &
 else
-    uvicorn app.main:app $MODE_FLAG --host 0.0.0.0 --port 8000 --log-level info 2>&1 | tee "$LOG_DIR/server.log" &
+    uvicorn app.main:app $MODE_FLAG --host 0.0.0.0 --port 5001 --log-level info 2>&1 | tee "$LOG_DIR/server.log" &
 fi
 SERVER_PID=$!
 

@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     DEBUG: bool = False
     API_V1_STR: str = "/api/v1"
+    PORT: int = int(os.getenv("PORT", "5001"))
 
     # Database configuration
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
